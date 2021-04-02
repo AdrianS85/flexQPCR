@@ -22,6 +22,7 @@ qpcr <- list(
   "opts" = list(
     "sampleRepsIn" = "files",
     "comparisons" = list(c("1K", "1S")),
+    "outputDir" = "qpcr_output",
     "plateDesign" = list(
       "file" = "plateDesign.tsv",
       "wellColname" = "well", ### This needs to have the same values as position column in runs
@@ -43,7 +44,7 @@ qpcr <- list(
     )
   ))
 
-
+dir.create(qpcr$opts$outputDir)
 
 qpcr$files = list(
   "aqp1_1" = list(
@@ -107,6 +108,7 @@ qpcr$files = list(
     "genesDesign" = "tbp", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[3]])
 )
+
 
 
 ### Here additional step could be added where we check if columns with given names exist
@@ -185,7 +187,7 @@ qpcr$ratio <- rlist::list.clean(
 qpcr$normalityHomogenity <- purrr::map(
   .x = qpcr$ratio,
   .f = function(gene){
-    TestNormalityAndHomogenityOfVariance(gene)
+    TidyTestNormalityAndHomogenityOfVarianceForOneVariable(gene)
   })
 
 
@@ -194,26 +196,56 @@ qpcr$pairwiseStat <- purrr::map2(
   .x = qpcr$ratio,
   .y = qpcr$normalityHomogenity,
   .f = function(gene, normalityHomogenityStat){
-    WilcoxonOrTTest(ratioData = gene, normalityHomogenityDataList = normalityHomogenityStat)
+    TidyWilcoxonOrTTestForOneVariable(
+      ratioData = gene, 
+      tidyTestNormalityAndHomogenityOfVarianceOutput = normalityHomogenityStat)
   })
 
 
 
-# go to stats
-
-# Next, statistical tests were used to calculate p values: (i) if R ratios of a given gene were normally distributed and showed equal variance between experimental groups, a standard Student’s t test was used; (ii) if R ratios of a given gene were normally distributed but did not show equal variance between experimental groups, a Student’s t test for groups with unequal variances was used; (iii) if R ratios were not normally distributed, a Mann–Whitney–Wilcoxon test was used. All values are reported as mean ± standard error of the mean. Differences were considered statistically significant at p < .05.
-
-
-# Visualizations
+qpcr$ratiosBind <- rlist::list.rbind(qpcr$ratio)
 
 
 
+TidyDrawGroupBoxplotsForEachVariable()
 
 
+
+qpcr$correlations <- TidyDrawCorrelationBetweenTwoVariables()
 
 
 
 
+
+
+
+###########
+### PCA ###
+
+purrr::walk2(
+  .x = metadata_analysis$corr, 
+  .y = names(metadata_analysis$corr),
+  .f = function(dataset, dataset_name){
+    
+    ggsave(
+      filename = paste0(dataset$dir, dataset_name, '_pca_metadata.png'), 
+      plot = factoextra::fviz_pca_ind(dataset$pca_scaled, repel = T), 
+      dpi = 250)
+    
+    if (dataset_name != 'no_nas_pca_fil') {
+      
+      ggsave(
+        filename = paste0(dataset$dir, dataset_name, '_pca_metadata_samples.png'), 
+        plot = factoextra::fviz_pca_biplot(
+          dataset$pca_scaled_samples, 
+          repel = T, 
+          habillage = dataset$habillage),
+        dpi = 250)
+    }
+  })
+
+### PCA ###
+###########
 
 
 
@@ -488,9 +520,9 @@ CalculateRatio <- function(
 
 
 
-TestNormalityAndHomogenityOfVariance <- function(
-  geneData,
-  ratioColnameRegex = "ratio_vs_.*",
+TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
+  tidyData,
+  valuesColumnRegex = "ratio_vs_.*",
   groupColName = qpcr$opts$plateDesign$groupColname
   
 )
@@ -536,9 +568,9 @@ TestNormalityAndHomogenityOfVariance <- function(
 
 
 
-WilcoxonOrTTest <- function(
-  ratioData,
-  normalityHomogenityDataList,
+TidyWilcoxonOrTTestForOneVariable <- function(
+  tidyData,
+  tidyTestNormalityAndHomogenityOfVarianceOutput,
   comparisons = qpcr$opts$comparisons, ### I think we should just use list with charvectors with control and exp factor
   significanceLevel = 0.05,
   groupColname = qpcr$opts$plateDesign$groupColname,
@@ -581,6 +613,7 @@ WilcoxonOrTTest <- function(
       
       return(stat_)
     })
+  
   names(stats) = purrr::map(
     .x = comparisons, 
     .f = function(comp){
@@ -589,3 +622,218 @@ WilcoxonOrTTest <- function(
   
   return(stats)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TidyDrawGroupBoxplotsForEachVariable <- function(
+  tidyData = qpcr$ratiosBind,
+  generateIndividualPlotsBasedOnThisColumn = "gene",
+  valueGroupsForSinglePlot = "group",
+  valuesColumn = "ratio_vs_gapdh",
+  outputDir = qpcr$opts$outputDir,
+  boxplotDir = "boxplots_"
+)
+{
+  dirName <- paste0(outputDir, '/', boxplotDir, generateIndividualPlotsBasedOnThisColumn)
+  
+  dir.create(dirName)
+  
+  purrr::walk(
+    .x = unique(qpcr$ratiosBind[[generateIndividualPlotsBasedOnThisColumn]]), 
+    .f = function(singlePlot){
+      
+      png_name <- paste0(dirName, '/', generateIndividualPlotsBasedOnThisColumn, '_', singlePlot, '.png')
+      x <- ggplot(
+        data = ratios, 
+        mapping = aes(x = !!as.symbol(valueGroupsForSinglePlot), y = !!as.symbol(valuesColumn), col = !!as.symbol(valueGroupsForSinglePlot))) +
+        geom_boxplot() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      
+      ggsave(filename = png_name, plot = x)
+    })
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TidyDrawCorrelationBetweenTwoVariables <- function(
+  tidyData = qpcr$ratiosBind,
+  samplesToCorrelateColumn = "gene",
+  correlateGroupsFromThisColumn = "sample",
+  valuesUsedForCorrelationColumn = "ratio_vs_gapdh",
+  outputDir = qpcr$opts$outputDir,
+  correlationsDir = "correlations_"
+)
+{
+  dirName <- paste0(outputDir, '/', correlationsDir)
+  
+  dir.create(dirName)
+  
+  png_name <- paste0(dirName, '/', 'correlation_', samplesToCorrelateColumn, "_", correlateGroupsFromThisColumn, '.png')
+  
+  matrixData <- tidyData[c(correlateGroupsFromThisColumn, samplesToCorrelateColumn, valuesUsedForCorrelationColumn)]
+  
+  matrixData <- tidyr::pivot_wider(
+    data = matrixData, 
+    values_from = !!as.symbol(valuesUsedForCorrelationColumn),
+    names_from = !!as.symbol(samplesToCorrelateColumn) )
+  
+  rownames(matrixData) <- matrixData[[correlateGroupsFromThisColumn]]
+  matrixData[[correlateGroupsFromThisColumn]] <- NULL
+  
+  cor <- Hmisc::rcorr(as.matrix(matrixData))
+  
+  cor_plot <- ggcorrplot::ggcorrplot(cor$r,
+                                     hc.order = TRUE,
+                                     type = "lower",
+                                     lab = TRUE,
+                                     p.mat = ggcorrplot::cor_pmat(cor$r))
+  
+  ggsave(filename = png_name, plot = cor_plot, dpi = 250)
+  
+  return(cor)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# TestNormalityAndHomogenityOfVariance <- function(
+#   geneData,
+#   ratioColnameRegex = "ratio_vs_.*",
+#   groupColName = qpcr$opts$plateDesign$groupColname
+#   
+# )
+# {
+#   groups <- unique(geneData[[groupColName]])
+#   
+#   ratioColnameBool <- stringr::str_detect(colnames(geneData), pattern = ratioColnameRegex)
+#   
+#   ratioColname <- colnames(geneData)[ratioColnameBool]
+#   
+#   
+#   
+#   shapiro <- purrr::map_dfr(
+#     .x = groups, 
+#     .f = function(group){
+#       
+#       groupSubset <- geneData[geneData[[groupColName]] == group,]
+#       
+#       shapiroForGroup <- broom::tidy(shapiro.test(groupSubset[[ratioColname]]))
+#       
+#       shapiroForGroup[["group"]] <- group
+#       
+#       return(shapiroForGroup)
+#     })
+#   
+#   formula_ <- as.formula(paste0(ratioColname, "~", groupColName))
+#   
+#   levene <- car::leveneTest(formula_, data = geneData)# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
+#   
+#   fligner <- broom::tidy(fligner.test(formula_, data = geneData))# Fligner-Killeen’s test: a non-parametric test which is very robust against departures from normality.
+#   
+#   return(list("shapiro" = shapiro, "levene" = levene, "fligner" = fligner))
+# }
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# WilcoxonOrTTest <- function(
+#   ratioData,
+#   normalityHomogenityDataList,
+#   comparisons = qpcr$opts$comparisons, ### I think we should just use list with charvectors with control and exp factor
+#   significanceLevel = 0.05,
+#   groupColname = qpcr$opts$plateDesign$groupColname,
+#   geneCol = qpcr$opts$runs$geneCol,
+#   ratioColnameRegex = "ratio_vs_.*"
+# )
+# {
+#   ratioColnameBool <- stringr::str_detect(colnames(ratioData), pattern = ratioColnameRegex)
+#   
+#   ratioColname <- colnames(ratioData)[ratioColnameBool]
+#   
+#   formula_ <- as.formula(paste0(ratioColname, " ~ ", groupColname))
+#   
+#   
+#   
+#   stats <- purrr::map(
+#     .x = comparisons, 
+#     .f = function(comparison){
+#       
+#       compSubset <- ratioData[ratioData[[groupColname]] %in% comparison,]
+#       
+#       areGroupsNormallyDistributed <- normalityHomogenityDataList$shapiro[normalityHomogenityDataList$shapiro[[groupColname]] %in% comparison,]$p.value
+#       
+#       
+#       if (normalityHomogenityDataList$levene[["Pr(>F)"]][[1]] > significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
+#       {
+#         stat_ <- broom::tidy( t.test(formula = formula_, data = compSubset, na.action = na.omit, var.equal = T) )
+#         
+#       } else if (normalityHomogenityDataList$levene[["Pr(>F)"]][[1]] <= significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
+#       {
+#         stat_ <- broom::tidy( t.test(formula = formula_, data = compSubset, na.action = na.omit, var.equal = F) )
+#         
+#       } else if (areGroupsNormallyDistributed[[1]]  <= significanceLevel || areGroupsNormallyDistributed[[2]]  <= significanceLevel)
+#       {
+#         stat_ <- broom::tidy( wilcox.test(formula_, data = compSubset) )
+#       }
+#       
+#       stat_$comparison <- paste0(comparison[[1]], "_vs_", comparison[[2]])
+#       stat_$gene <- compSubset[[geneCol]][[1]]
+#       
+#       return(stat_)
+#     })
+#   names(stats) = purrr::map(
+#     .x = comparisons, 
+#     .f = function(comp){
+#       paste0(comp[[1]], "_vs_", comp[[2]])
+#     } )
+#   
+#   return(stats)
+# }
