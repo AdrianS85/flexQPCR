@@ -2,7 +2,7 @@ install.packages('pcr')
 # Needs data in table format
 devtools::install_github("ewallace/tidyqpcr", build_vignettes = TRUE)
 BiocManager::install("ReadqPCR")
-
+devtools::install_github("jimrperkins/NormqPCR")
 
 
 BiocManager::install("EasyqpcR") # Corrupted dependencies
@@ -21,6 +21,7 @@ library(magrittr)
 qpcr <- list(
   "opts" = list(
     "sampleRepsIn" = "files",
+    "comparisons" = list(c("1K", "1S")),
     "plateDesign" = list(
       "file" = "plateDesign.tsv",
       "wellColname" = "well", ### This needs to have the same values as position column in runs
@@ -146,53 +147,94 @@ qpcr$ladderData <- purrr::map(
   })
 
 
+
 CheckIfAllReferenceGenesHaveData()
 
 
 
-
-test <- GetReferenceValues()
-
-GetReferenceValues <- function(
-  perGene = qpcr$perGene,
-  perGeneNames = qpcr$perGene,
-  refGenes = qpcr$opts$runs$refGenes,
-)
-{
-  purrr::pmap(
-    .l = list(perGene, perGeneNames), 
-    .f = function(gene, geneName)
-    {
-      
-      if (tolower(geneName) %in% tolower(refGenes))
-      {
-        geneMatrix <- as.matrix(gene[c("1", "2", "3")])
-      }
-      
-    })
-  
-
-  
-}
+qpcr$refGenesToUse <- purrr::map(
+  .x = list("geNorm" = "geNorm", "NormFinder" = "NormFinder" ), 
+  .f = function(method){
+    GetReferenceValues(method)
+  })
 
 
 
-NormqPCR::selectHKs(qPCRBatch, group, method = "geNorm", minNrHKs = 2, log = TRUE, Symbols, trace = TRUE, na.rm = TRUE)
+qpcr$deltaCt <- purrr::map2(
+  .x = qpcr$perGene,
+  .y = qpcr$ladderData,
+  .f = function(gene, ladder){
+    CalculateDeltaCt(gene$data, ladder$efficiency)
+  })
 
 
-# Select reference genes
 
-# BiocManager::install("NormqPCR"), BiocManager::install("SLqPCR") : normPCR, selectHKgenes
+qpcr$ratio <- rlist::list.clean(
+  purrr::map(
+    .x = qpcr$deltaCt,
+    .f = function(gene){
+      CalculateRatio(gene, qpcr$deltaCt$gapdh, "gapdh")
+      }) )
 
-# calculate reference ct value from either all groups or control group. Eff POTEGA(Ctmean-Ctpróby). cdd method only if I am going to develop this
 
-# Calculate pfaffl values compared to selected reference genes
+
+
+
+
+### !!! Lavene test should use median, or brown-forsyte? Change it!
+qpcr$normalityHomogenity <- purrr::map(
+  .x = qpcr$ratio,
+  .f = function(gene){
+    TestNormalityAndHomogenityOfVariance(gene)
+  })
+
+
+
+qpcr$pairwiseStat <- purrr::map2(
+  .x = qpcr$ratio,
+  .y = qpcr$normalityHomogenity,
+  .f = function(gene, normalityHomogenityStat){
+    WilcoxonOrTTest(ratioData = gene, normalityHomogenityDataList = normalityHomogenityStat)
+  })
+
+
+
+# go to stats
+
+# Next, statistical tests were used to calculate p values: (i) if R ratios of a given gene were normally distributed and showed equal variance between experimental groups, a standard Student’s t test was used; (ii) if R ratios of a given gene were normally distributed but did not show equal variance between experimental groups, a Student’s t test for groups with unequal variances was used; (iii) if R ratios were not normally distributed, a Mann–Whitney–Wilcoxon test was used. All values are reported as mean ± standard error of the mean. Differences were considered statistically significant at p < .05.
+
 
 # Visualizations
 
-# Check normality and variance
 
-# go to stats
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -365,4 +407,185 @@ CheckIfAllReferenceGenesHaveData <- function(
       print(paste0(gene, " is present in datasets"))
     } else stop(paste0(gene, " IS ABSENT IN DATASETS. BEWARE OF CAPITALIZED LETTERS."))
   }
+}
+
+
+
+
+
+
+
+CalculateDeltaCt <- function(
+  geneData,
+  eneEfficiency,
+  meanFromAllSamplesOrControlGroup = "all", ### "all" or "control"
+  controlGroupName = NA, ### only for meanFromAllSamplesOrControlGroup = "control"
+  groupName = qpcr$opts$plateDesign$groupColname,
+  cqCol = qpcr$opts$runs$cqCol,
+  deltaCtColName = "deltaCt"
+)
+{
+  if (meanFromAllSamplesOrControlGroup == "all")
+  {
+    meanOfMeans <- mean(geneData[["mean"]], na.rm = TRUE)
+    
+  } else if (meanFromAllSamplesOrControlGroup == "control")
+  {
+    meanOfMeans <- mean( 
+      subset(
+        x = geneData,
+        subset = geneData[[groupName]] == controlGroupName,
+        select = groupName ),
+      na.rm = TRUE)
+    
+    assertthat::not_empty(meanOfMeans)
+    
+  } else { stop("meanFromAllSamplesOrControlGroup need to be either all or control") }
+  
+  geneData[[deltaCtColName]] <- NA
+  
+  for (sampleNb in seq_along(geneData[["mean"]]))
+  {
+    geneData[[deltaCtColName]][[sampleNb]] <- eneEfficiency ^ (meanOfMeans - geneData[["mean"]][[sampleNb]])
+  }
+  
+  return(geneData)
+}
+
+
+
+
+
+
+
+
+CalculateRatio <- function(
+  geneExperimentalData,
+  geneReferenceData,
+  geneReferenceName,
+  geneCol = qpcr$opts$runs$geneCol,
+  CqCol = qpcr$opts$runs$cqCol,
+  deltaCtColName = "deltaCt",
+  ratioColName = "ratio_vs_"
+)
+{
+  if (geneExperimentalData[[geneCol]][[1]] != geneReferenceName)
+  {
+    ddCtName <- paste0(ratioColName, geneReferenceName)
+    
+    geneExperimentalData[[ddCtName]] <- NA
+    
+    geneExperimentalData[[ddCtName]] <- geneExperimentalData[[deltaCtColName]]/geneReferenceData[[deltaCtColName]]
+    
+    return(geneExperimentalData)
+    
+  } else return(NULL)
+
+}
+
+
+
+
+
+
+TestNormalityAndHomogenityOfVariance <- function(
+  geneData,
+  ratioColnameRegex = "ratio_vs_.*",
+  groupColName = qpcr$opts$plateDesign$groupColname
+  
+)
+{
+  groups <- unique(geneData[[groupColName]])
+  
+  ratioColnameBool <- stringr::str_detect(colnames(geneData), pattern = ratioColnameRegex)
+  
+  ratioColname <- colnames(geneData)[ratioColnameBool]
+  
+  
+  
+  shapiro <- purrr::map_dfr(
+    .x = groups, 
+    .f = function(group){
+      
+      groupSubset <- geneData[geneData[[groupColName]] == group,]
+
+      shapiroForGroup <- broom::tidy(shapiro.test(groupSubset[[ratioColname]]))
+      
+      shapiroForGroup[["group"]] <- group
+      
+      return(shapiroForGroup)
+    })
+  
+  formula_ <- as.formula(paste0(ratioColname, "~", groupColName))
+  
+  levene <- car::leveneTest(formula_, data = geneData)# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
+  
+  fligner <- broom::tidy(fligner.test(formula_, data = geneData))# Fligner-Killeen’s test: a non-parametric test which is very robust against departures from normality.
+  
+  return(list("shapiro" = shapiro, "levene" = levene, "fligner" = fligner))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+WilcoxonOrTTest <- function(
+  ratioData,
+  normalityHomogenityDataList,
+  comparisons = qpcr$opts$comparisons, ### I think we should just use list with charvectors with control and exp factor
+  significanceLevel = 0.05,
+  groupColname = qpcr$opts$plateDesign$groupColname,
+  geneCol = qpcr$opts$runs$geneCol,
+  ratioColnameRegex = "ratio_vs_.*"
+)
+{
+  ratioColnameBool <- stringr::str_detect(colnames(ratioData), pattern = ratioColnameRegex)
+  
+  ratioColname <- colnames(ratioData)[ratioColnameBool]
+  
+  formula_ <- as.formula(paste0(ratioColname, " ~ ", groupColname))
+  
+  
+  
+  stats <- purrr::map(
+    .x = comparisons, 
+    .f = function(comparison){
+      
+      compSubset <- ratioData[ratioData[[groupColname]] %in% comparison,]
+      
+      areGroupsNormallyDistributed <- normalityHomogenityDataList$shapiro[normalityHomogenityDataList$shapiro[[groupColname]] %in% comparison,]$p.value
+      
+      
+      if (normalityHomogenityDataList$levene[["Pr(>F)"]][[1]] > significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
+      {
+        stat_ <- broom::tidy( t.test(formula = formula_, data = compSubset, na.action = na.omit, var.equal = T) )
+        
+      } else if (normalityHomogenityDataList$levene[["Pr(>F)"]][[1]] <= significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
+      {
+        stat_ <- broom::tidy( t.test(formula = formula_, data = compSubset, na.action = na.omit, var.equal = F) )
+        
+      } else if (areGroupsNormallyDistributed[[1]]  <= significanceLevel || areGroupsNormallyDistributed[[2]]  <= significanceLevel)
+      {
+        stat_ <- broom::tidy( wilcox.test(formula_, data = compSubset) )
+      }
+      
+      stat_$comparison <- paste0(comparison[[1]], "_vs_", comparison[[2]])
+      stat_$gene <- compSubset[[geneCol]][[1]]
+      
+      return(stat_)
+    })
+  names(stats) = purrr::map(
+    .x = comparisons, 
+    .f = function(comp){
+      paste0(comp[[1]], "_vs_", comp[[2]])
+    } )
+  
+  return(stats)
 }
