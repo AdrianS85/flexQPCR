@@ -18,28 +18,32 @@ library(magrittr)
 ### skipRows - used when there is some shit rows before actual colnames. just set it to skip all shit rows, but not colnames
 ### sampleRepsIn - tells if we chould look for replication information in plateDesign "plate" or in files descriptions "files"
 ### namesForReplicates - lista nazw dla kolejnych replikatów
+### format must be either tsv or excelSheets. In excelSheets format each "file" is separate sheet
+### geneCol is not in the data, its produced based on other information
 qpcr <- list(
   "opts" = list(
     "sampleRepsIn" = "files",
     "comparisons" = list(c("1K", "1S")),
     "outputDir" = "qpcr_output",
     "plateDesign" = list(
-      "file" = "plateDesign.tsv",
+      "file" = "plateDesign_gjt_extraction.tsv",
       "wellColname" = "well", ### This needs to have the same values as position column in runs
       "sampleColname" = "sample",
       "groupColname" = "group",
       "RepsColName" = NA),
     "runs" = list(
+      "format" = "excelSheets",
+      "excelFile" = "sekcja hipp_dane.xlsx",
       "colTypes" = "ccccnccc", ### "ccccncccccnncccccnncccn" for LC96, 
-      "wellCol" = "Pos",
-      "cqCol" = "Cp",
-      "skipRows" = 1, ### 0 for LC96
+      "wellCol" = "Position",
+      "cqCol" = "Cq",
+      "skipRows" = 0, ### 0 for LC96
       "complexGeneDesignFilePresent" = F,
       "geneCol" = "gene",
       "emptyName" = NA, ### this cannot be changed, as !is.na is used further, do use this value to change empty names to NA
-      "blankName" = "BLANK", ### !!! There may be some issues if more than one blank is present
-      "ladder" = list("x10" = 10000, "x50" = 2000, "x250" = 400, "x1250" = 80, "x6250" = 16),
-      "refGenes" = c("gapdh", "hmbs", "tbp"),
+      "blankName" = "H2O", ### !!! There may be some issues if more than one blank is present
+      "ladder" = list("x2" = 1250, "x10" = 250, "x50" = 50, "x250" = 10, "x1250" = 2),
+      "refGenes" = c("gapdh", "hmbs", "tbp", "ywhaz"),
       "namesForReplicates" = list(1, 2, 3) ### !!! co jeśli nazwy replicatów zostały pdoane w plate file? Need to write some checking function
     )
   ))
@@ -47,65 +51,89 @@ qpcr <- list(
 dir.create(qpcr$opts$outputDir)
 
 qpcr$files = list(
-  "aqp1_1" = list(
-    "data" = "STQPCR3EXPAQP1.txt", 
-    "genesDesign" = "aqp1", 
+  "lct_1" = list(
+    "data" = "LCT", 
+    "genesDesign" = "lct", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
-  "aqp1_2" = list(
-    "data" = "STQPCR3EXPAQP1(2).txt", 
-    "genesDesign" = "aqp1", 
+  "lct_2" = list(
+    "data" = "LCT (2)", 
+    "genesDesign" = "lct", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
-  "aqp1_3" = list(
-    "data" = "STQPCR3EXPAQP1(3).txt", 
-    "genesDesign" = "aqp1", 
+  "lct_3" = list(
+    "data" = "LCT (3)", 
+    "genesDesign" = "lct", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[3]]),
-  "hbb-b1_1" = list(
-    "data" = "STQPCR3EXPHBB-B1.txt", 
-    "genesDesign" = "hbb-b1", 
+  "ttr_1" = list(
+    "data" = "TTR", 
+    "genesDesign" = "ttr", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
-  "hbb-b1_2" = list(
-    "data" = "STQPCR3EXPHBB-B1[2].txt", 
-    "genesDesign" = "hbb-b1", 
+  "ttr_2" = list(
+    "data" = "TTR (2)", 
+    "genesDesign" = "ttr", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
-  "hbb-b1_3" = list(
-    "data" = "STQPCR3EXPHBB-B1[3].txt", 
-    "genesDesign" = "hbb-b1", 
+  "ttr_3" = list(
+    "data" = "TTR (3)", 
+    "genesDesign" = "ttr", 
+    "Rep" = qpcr$opts$runs$namesForReplicates[[3]]),
+  "trhr_1" = list(
+    "data" = "TRHR", 
+    "genesDesign" = "trhr", 
+    "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
+  "trhr_2" = list(
+    "data" = "TRHR (2)", 
+    "genesDesign" = "trhr", 
+    "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
+  "trhr_3" = list(
+    "data" = "TRHR (3)", 
+    "genesDesign" = "trhr", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[3]]),
   "gapdh_1" = list(
-    "data" = "STQPCR3EXPGAPDH.txt", 
+    "data" = "GAPDH", 
     "genesDesign" = "gapdh", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
   "gapdh_2" = list(
-    "data" = "STQPCR3EXPGAPDH[2].txt", 
+    "data" = "GAPDH (2)", 
     "genesDesign" = "gapdh", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
   "gapdh_3" = list(
-    "data" = "STQPCR3EXPGAPDH[3].txt", 
+    "data" = "GAPDH (3)", 
     "genesDesign" = "gapdh", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[3]]),
   "hmbs_1" = list(
-    "data" = "STQPCR3EXPHMBS.txt", 
+    "data" = "HMBS", 
     "genesDesign" = "hmbs", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
   "hmbs_2" = list(
-    "data" = "STQPCR3EXPHMBS[2].txt", 
+    "data" = "HMBS (2)", 
     "genesDesign" = "hmbs", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
   "hmbs_3" = list(
-    "data" = "STQPCR3EXPHMBS[3].txt", 
+    "data" = "HMBS (3)", 
     "genesDesign" = "hmbs", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[3]]),
   "tbp_1" = list(
-    "data" = "STQPCR3EXPTBP.txt", 
+    "data" = "TBP", 
     "genesDesign" = "tbp", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
   "tbp_2" = list(
-    "data" = "STQPCR3EXPTBP[2].txt", 
+    "data" = "TBP (2)", 
     "genesDesign" = "tbp", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
   "tbp_3" = list(
-    "data" = "STQPCR3EXPTBP[3].txt", 
+    "data" = "TBP (3)", 
     "genesDesign" = "tbp", 
+    "Rep" = qpcr$opts$runs$namesForReplicates[[3]]),
+  "ywhaz_1" = list(
+    "data" = "YWHAZ", 
+    "genesDesign" = "ywhaz", 
+    "Rep" = qpcr$opts$runs$namesForReplicates[[1]]),
+  "ywhaz_2" = list(
+    "data" = "YWHAZ (2)", 
+    "genesDesign" = "ywhaz", 
+    "Rep" = qpcr$opts$runs$namesForReplicates[[2]]),
+  "ywhaz_3" = list(
+    "data" = "YWHAZ (3)", 
+    "genesDesign" = "ywhaz", 
     "Rep" = qpcr$opts$runs$namesForReplicates[[3]])
 )
 
@@ -119,10 +147,19 @@ qpcr$plateDesign <- readr::read_tsv(qpcr$opts$plateDesign$file, col_names = T)
 qpcr$input <- purrr::map(
   .x = qpcr$files, 
   .f = function(files){
-    prepareInput(
-      rawFileName = files$data, 
-      genesDesign = files$genesDesign, 
-      repsNameFiles = files$Rep)
+    
+    if (qpcr$opts$runs$format == "tsv") {
+      prepareInput(
+        rawFileName = files$data, 
+        genesDesign = files$genesDesign, 
+        repsNameFiles = files$Rep)
+    } else if (qpcr$opts$runs$format == "excelSheets") {
+      prepareInput(
+        rawFileName = qpcr$opts$runs$excelFile, 
+        genesDesign = files$genesDesign, 
+        repsNameFiles = files$Rep,
+        sheetName = files$data)
+    }
   })
 
 
@@ -141,9 +178,43 @@ names(qpcr$perGene) <- levels(as.factor(qpcr$inputMerged$gene))
 
 
 
+
+### MANUAL STEP - REMOVE CORRUPTED VALUES, BAD LADDER CONCENTRATIONS AND RECALCULATE VALUES ###
+qpcr$perGeneQa <- qpcr$perGene
+
+# rows/columns
+qpcr$perGeneQa$lct$valuesToNaCoordinates <- list(
+  "gene" = list( c(14,6), c(15,6), c(16,6),c(17,7), c(22,6), c(23,6), c(24,6)),
+  "ladder" = list( c(5,5), c(5,6), c(5,7) )
+)
+
+qpcr$perGeneQa$hmbs$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,5), c(5,6), c(5,7) ))
+
+qpcr$perGeneQa$tbp$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,5), c(5,6), c(5,7) ))
+
+qpcr$perGeneQa$trhr$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,6) ))
+
+qpcr$perGeneQa$ywhaz$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,6) ))
+
+qpcr$perGeneQaPassed <- purrr::map(
+  .x = qpcr$perGeneQa, 
+  .f = function(gene){
+    
+    RepairCorruptedValues(gene)
+  })
+
+qpcr$perGeneQa <- NULL
+
+### MANUAL STEP - REMOVE CORRUPTED VALUES, BAD LADDER CONCENTRATIONS AND RECALCULATE VALUES ###
+
+
 # set lowestDilutionToUse and highestDilutionToUse with pmap
 qpcr$ladderData <- purrr::map(
-  .x = qpcr$perGene, 
+  .x = qpcr$perGeneQaPassed, 
   .f = function(gene_){
     calculateLadderStats(gene_$ladder$data$mean)
   })
@@ -157,13 +228,17 @@ CheckIfAllReferenceGenesHaveData()
 qpcr$refGenesToUse <- purrr::map(
   .x = list("geNorm" = "geNorm", "NormFinder" = "NormFinder" ), 
   .f = function(method){
-    GetReferenceValues(method)
+    GetReferenceValues(
+      method, 
+      perGene = qpcr$perGeneQaPassed,
+      perGeneNames = names(qpcr$perGeneQaPassed),
+      refGenesToRemove = "ywhaz")
   })
 
 
 
 qpcr$deltaCt <- purrr::map2(
-  .x = qpcr$perGene,
+  .x = qpcr$perGeneQaPassed,
   .y = qpcr$ladderData,
   .f = function(gene, ladder){
     CalculateDeltaCt(gene$data, ladder$efficiency)
@@ -175,7 +250,7 @@ qpcr$ratio <- rlist::list.clean(
   purrr::map(
     .x = qpcr$deltaCt,
     .f = function(gene){
-      CalculateRatio(gene, qpcr$deltaCt$gapdh, "gapdh")
+      CalculateRatio(gene, qpcr$deltaCt$hmbs, "hmbs")
       }) )
 
 
@@ -189,6 +264,8 @@ qpcr$normalityHomogenity <- purrr::map(
   .f = function(gene){
     TidyTestNormalityAndHomogenityOfVarianceForOneVariable(gene)
   })
+
+
 
 
 
@@ -207,11 +284,11 @@ qpcr$ratiosBind <- rlist::list.rbind(qpcr$ratio)
 
 
 
-TidyDrawGroupBoxplotsForEachVariable()
+TidyDrawGroupBoxplotsForEachVariable(tidyData = qpcr$ratiosBind)
 
 
 
-qpcr$correlations <- TidyDrawCorrelationBetweenTwoVariables()
+qpcr$correlations <- TidyDrawCorrelationBetweenTwoVariables(tidyData = qpcr$ratiosBind)
 
 
 
@@ -276,11 +353,13 @@ purrr::walk2(
 
 
 
-
+#only if format == excelSheet
 prepareInput <- function(
   rawFileName,
   genesDesign,
   repsNameFiles = NA,
+  format = qpcr$opts$runs$format,
+  sheetName = NA, 
   sampleRepsIn = qpcr$opts$sampleRepsIn,
   repsNamePlate = qpcr$opts$plateDesign$RepsColName,
   colTypes = qpcr$opts$runs$colTypes, 
@@ -295,12 +374,24 @@ prepareInput <- function(
 {
   library(Hmisc)
   
-  colNames_ <- readr::read_tsv(rawFileName, col_types = colTypes, col_names = T, skip = skipRows, n_max = 2)
-  
-  rawFile <- readr::read_tsv(rawFileName, col_types = colTypes, col_names = F, skip = skipRows + 1)
-  
-  colnames(rawFile) <- colnames(colNames_)
-  
+  if(format == "tsv") {
+    
+    colNames_ <- readr::read_tsv(rawFileName, col_types = colTypes, col_names = T, skip = skipRows, n_max = 2)
+    
+    rawFile <- readr::read_tsv(rawFileName, col_types = colTypes, col_names = F, skip = skipRows + 1)
+    
+    colnames(rawFile) <- colnames(colNames_)
+    
+  } else if (format == "excelSheets") {
+    
+    rawFile <- openxlsx::read.xlsx(xlsxFile = rawFileName, sheet = sheetName, colNames = T)
+    
+    rawFile[[cqCol]] <- as.numeric(rawFile[[cqCol]])
+    
+  } else if (format != "tsv" && format != "excelSheets") {
+    
+    stop("Format needs to be either tsv or excelSheets")
+  }
   
   rawFile2 <-subset(rawFile, select = c(wellCol, cqCol))
 
@@ -350,6 +441,9 @@ prepareInput <- function(
 
 
 
+
+
+
 prepareDataFromInput <- function(
   geneName,
   inputMerged = qpcr$inputMerged,
@@ -367,18 +461,7 @@ prepareDataFromInput <- function(
   preAnalyzedData <- tidyr::pivot_wider(
     data = preAnalyzedData, names_from = RepCol, values_from = cqCol)
   
-  cqValues <- subset(x = preAnalyzedData, select = repLevels)
-  
-  preAnalyzedData$mean <- rowMeans(cqValues, na.rm=TRUE)
-  
-  preAnalyzedData$sd <- apply(X = cqValues, MARGIN = 1, FUN = sd, na.rm=TRUE)
-  
-  preAnalyzedData$flag <- dplyr::case_when(
-    preAnalyzedData$sd <= 0.5 ~ "OK",
-    preAnalyzedData$sd < 1 & preAnalyzedData$sd > 0.5 ~ "DANGER",
-    preAnalyzedData$sd >= 1 ~ "ERROR"
-  )
-  
+  preAnalyzedData <- AddMeanSdFlagToDF(preAnalyzedData, repLevels)
   
   preAnalyzedDataList <- list(
     "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] %nin%  c(blankName, ladderNames),],
@@ -393,12 +476,41 @@ prepareDataFromInput <- function(
 
 
 
+
+AddMeanSdFlagToDF <- function(
+  fullDfWithOneColPerSampleReplicate,
+  namesForColumnsWithTechnicalReplicates
+)
+{
+  columnsWithTechnicalReplicates <- fullDfWithOneColPerSampleReplicate[, namesForColumnsWithTechnicalReplicates]
+  
+  fullDfWithOneColPerSampleReplicate$mean <- apply(X = columnsWithTechnicalReplicates, MARGIN = 1, FUN = mean, na.rm=TRUE)
+  
+  fullDfWithOneColPerSampleReplicate$mean[is.nan(fullDfWithOneColPerSampleReplicate$mean)] <- NA
+  
+  fullDfWithOneColPerSampleReplicate$sd <- apply(X = columnsWithTechnicalReplicates, MARGIN = 1, FUN = sd, na.rm=TRUE)
+  
+  fullDfWithOneColPerSampleReplicate$flag <- dplyr::case_when(
+    fullDfWithOneColPerSampleReplicate$sd <= 0.5 ~ "OK",
+    fullDfWithOneColPerSampleReplicate$sd < 1 & fullDfWithOneColPerSampleReplicate$sd > 0.5 ~ "DANGER",
+    fullDfWithOneColPerSampleReplicate$sd >= 1 ~ "ERROR")
+  
+  return(fullDfWithOneColPerSampleReplicate)
+}
+
+
+
+
+
+
 calculateLadderStats <- function(
   ladderMeans,
   lowestDilutionToUse = 1,
-  highestDilutionToUse = length(qpcr$opts$runs$ladder),
   ladderConcentrations = qpcr$opts$runs$ladder)
 {
+  
+  highestDilutionToUse <- length(ladderMeans[!is.na(ladderMeans)])
+  
   fit <- lm(ladderMeans[lowestDilutionToUse:highestDilutionToUse] ~ log10(as.numeric(ladderConcentrations)[lowestDilutionToUse:highestDilutionToUse]) )
   
   slope <- coef(fit)[2]
@@ -422,6 +534,55 @@ calculateLadderStats <- function(
 
 
 
+
+
+GetReferenceValues <- function(
+  method,
+  perGene,
+  perGeneNames,
+  refGenesToRemove = NA,
+  refGenes = qpcr$opts$runs$refGenes,
+  namesForReplicates = qpcr$opts$runs$namesForReplicates,
+  groupColname = qpcr$opts$plateDesign$groupColname,
+  sampleColname = qpcr$opts$plateDesign$sampleColname
+)
+{
+  if ( !is.na(refGenesToRemove) ) {
+    library(Hmisc)
+    refGenes <- refGenes[refGenes %nin% refGenesToRemove]
+  }
+  
+  
+  groupNamesTemp <- perGene[[1]][["data"]]
+  
+  groupNames <- groupNamesTemp[order(groupNamesTemp[[sampleColname]]),]
+  
+  groupNames <- groupNames[groupColname]
+  
+  
+  refDf <- purrr::pmap_dfc(
+    .l = list(perGene, perGeneNames), 
+    .f = function(gene, geneName)
+    {
+      
+      if (tolower(geneName) %in% tolower(refGenes))
+      {
+        gene_data <- gene[["data"]]
+        gene_data <- gene_data[order(gene_data[[sampleColname]]),]
+        gene_data <- gene_data["mean"]
+        colnames(gene_data) <- c(geneName)
+        return(gene_data)
+      }
+    })
+  
+  normRefDf <- NormqPCR::selectHKs(as.matrix(refDf), Symbols = colnames(refDf), group = groupNames[[groupColname]], method = method, minNrHKs = 2, log = TRUE, trace = TRUE, na.rm = TRUE)
+  
+  advOutout <- capture.output(NormqPCR::selectHKs(as.matrix(refDf), Symbols = colnames(refDf), group = groupNames[[groupColname]], method = method, minNrHKs = 2, log = TRUE, trace = TRUE, na.rm = TRUE), type = c("output", "message"))
+  
+  print(paste0("FINISHED ANALYSIS USING ", method))
+  
+  return(list("output" = normRefDf, "advOutout" = advOutout))
+}
 
 
 
@@ -524,14 +685,13 @@ TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
   tidyData,
   valuesColumnRegex = "ratio_vs_.*",
   groupColName = qpcr$opts$plateDesign$groupColname
-  
 )
 {
-  groups <- unique(geneData[[groupColName]])
+  groups <- unique(tidyData[[groupColName]])
   
-  ratioColnameBool <- stringr::str_detect(colnames(geneData), pattern = ratioColnameRegex)
+  valuesColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valuesColumnRegex)
   
-  ratioColname <- colnames(geneData)[ratioColnameBool]
+  valuesColname <- colnames(tidyData)[valuesColnameBool]
   
   
   
@@ -539,20 +699,20 @@ TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
     .x = groups, 
     .f = function(group){
       
-      groupSubset <- geneData[geneData[[groupColName]] == group,]
+      groupSubset <- tidyData[tidyData[[groupColName]] == group,]
 
-      shapiroForGroup <- broom::tidy(shapiro.test(groupSubset[[ratioColname]]))
+      shapiroForGroup <- broom::tidy(shapiro.test(groupSubset[[valuesColname]]))
       
       shapiroForGroup[["group"]] <- group
       
       return(shapiroForGroup)
     })
   
-  formula_ <- as.formula(paste0(ratioColname, "~", groupColName))
+  formula_ <- as.formula(paste0(valuesColname, "~", groupColName))
   
-  levene <- car::leveneTest(formula_, data = geneData)# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
+  levene <- car::leveneTest(formula_, data = tidyData)# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
   
-  fligner <- broom::tidy(fligner.test(formula_, data = geneData))# Fligner-Killeen’s test: a non-parametric test which is very robust against departures from normality.
+  fligner <- broom::tidy(fligner.test(formula_, data = tidyData))# Fligner-Killeen’s test: a non-parametric test which is very robust against departures from normality.
   
   return(list("shapiro" = shapiro, "levene" = levene, "fligner" = fligner))
 }
@@ -560,6 +720,16 @@ TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
 
 
 
+
+
+
+TidyAnovas <- function(
+  tidyData,
+)
+{
+  
+  
+}
 
 
 
@@ -575,7 +745,7 @@ TidyWilcoxonOrTTestForOneVariable <- function(
   significanceLevel = 0.05,
   groupColname = qpcr$opts$plateDesign$groupColname,
   geneCol = qpcr$opts$runs$geneCol,
-  ratioColnameRegex = "ratio_vs_.*"
+  ratioColnameRegex = "ratio_vs_.*" ### !!! redo the name to valueColnameRegex
 )
 {
   ratioColnameBool <- stringr::str_detect(colnames(ratioData), pattern = ratioColnameRegex)
@@ -634,14 +804,11 @@ TidyWilcoxonOrTTestForOneVariable <- function(
 
 
 
-
-
-
 TidyDrawGroupBoxplotsForEachVariable <- function(
-  tidyData = qpcr$ratiosBind,
+  tidyData,
   generateIndividualPlotsBasedOnThisColumn = "gene",
   valueGroupsForSinglePlot = "group",
-  valuesColumn = "ratio_vs_gapdh",
+  valuesColumnRegex = "ratio_vs_.*", ### !!! change into regex
   outputDir = qpcr$opts$outputDir,
   boxplotDir = "boxplots_"
 )
@@ -650,13 +817,19 @@ TidyDrawGroupBoxplotsForEachVariable <- function(
   
   dir.create(dirName)
   
+  valuesColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valuesColumnRegex)
+  
+  valuesColumn <- colnames(tidyData)[valuesColnameBool]
+  
   purrr::walk(
-    .x = unique(qpcr$ratiosBind[[generateIndividualPlotsBasedOnThisColumn]]), 
+    .x = unique(tidyData[[generateIndividualPlotsBasedOnThisColumn]]), 
     .f = function(singlePlot){
+      
+      singleVariable <- tidyData[tidyData[[generateIndividualPlotsBasedOnThisColumn]] == singlePlot,]
       
       png_name <- paste0(dirName, '/', generateIndividualPlotsBasedOnThisColumn, '_', singlePlot, '.png')
       x <- ggplot(
-        data = ratios, 
+        data = singleVariable, 
         mapping = aes(x = !!as.symbol(valueGroupsForSinglePlot), y = !!as.symbol(valuesColumn), col = !!as.symbol(valueGroupsForSinglePlot))) +
         geom_boxplot() +
         theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -678,11 +851,13 @@ TidyDrawGroupBoxplotsForEachVariable <- function(
 
 
 
+
+
 TidyDrawCorrelationBetweenTwoVariables <- function(
-  tidyData = qpcr$ratiosBind,
+  tidyData,
   samplesToCorrelateColumn = "gene",
   correlateGroupsFromThisColumn = "sample",
-  valuesUsedForCorrelationColumn = "ratio_vs_gapdh",
+  valuesUsedForCorrelationColumn = "ratio_vs_gapdh", ### !!! change into regex
   outputDir = qpcr$opts$outputDir,
   correlationsDir = "correlations_"
 )
@@ -721,7 +896,48 @@ TidyDrawCorrelationBetweenTwoVariables <- function(
 
 
 
-
+RepairCorruptedValues <- function(
+  geneQaPassed_,
+  whereInGQPAreGeneData = "data",
+  whereInGQPAreLadderData = c("ladder", "data"),
+  whereInGQPAreNACoordinates = "valuesToNaCoordinates",
+  whereInNACoordAreGeneCoords = "gene",
+  whereInNACoordAreLadderCoords = "ladder",
+  repLevels = as.character(qpcr$opts$runs$namesForReplicates),
+  rowCoord = 1,
+  colCoord = 2
+)
+{
+  
+  if (!is.null(
+    geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]])
+  ) {
+    
+    for (value in seq_along(
+      geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]])) {
+      
+      geneQaPassed_[[ whereInGQPAreGeneData ]][[ geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]][[value]][[rowCoord]], geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]][[value]][[colCoord]] ]] <- NA
+      
+      geneQaPassed_[[ whereInGQPAreGeneData ]] <- AddMeanSdFlagToDF(geneQaPassed_[[ whereInGQPAreGeneData ]], repLevels)
+    }
+  }
+  
+  
+  
+  if (!is.null(geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]])
+  ) {
+    
+    for (value in seq_along(
+      geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]])) {
+      
+      geneQaPassed_[[ whereInGQPAreLadderData[[1]] ]][[ whereInGQPAreLadderData[[2]] ]][[geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]][[value]][[rowCoord]], geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]][[value]][[colCoord]] ]] <- NA
+      
+      geneQaPassed_[[ whereInGQPAreLadderData[[1]] ]][[ whereInGQPAreLadderData[[2]] ]] <- AddMeanSdFlagToDF(geneQaPassed_[[ whereInGQPAreLadderData[[1]] ]][[ whereInGQPAreLadderData[[2]] ]], repLevels)
+    }
+  }
+  
+  return(geneQaPassed_)
+}
 
 
 
