@@ -23,7 +23,7 @@ library(magrittr)
 qpcr <- list(
   "opts" = list(
     "sampleRepsIn" = "files",
-    "comparisons" = list(c("1K", "1S")),
+    "comparisons" = list(c("DOR", "VENT")),
     "outputDir" = "qpcr_output",
     "plateDesign" = list(
       "file" = "plateDesign_gjt_extraction.tsv",
@@ -258,11 +258,12 @@ qpcr$ratio <- rlist::list.clean(
 
 
 
-### !!! Lavene test should use median, or brown-forsyte? Change it!
-qpcr$normalityHomogenity <- purrr::map(
+
+qpcr$normalityHomogenity <- purrr::map2(
   .x = qpcr$ratio,
-  .f = function(gene){
-    TidyTestNormalityAndHomogenityOfVarianceForOneVariable(gene)
+  .y = names(qpcr$ratio),
+  .f = function(gene, geneName){
+    TidyTestNormalityAndHomogenityOfVarianceForOneVariable(gene, geneName)
   })
 
 
@@ -274,7 +275,7 @@ qpcr$pairwiseStat <- purrr::map2(
   .y = qpcr$normalityHomogenity,
   .f = function(gene, normalityHomogenityStat){
     TidyWilcoxonOrTTestForOneVariable(
-      ratioData = gene, 
+      tidyData = gene, 
       tidyTestNormalityAndHomogenityOfVarianceOutput = normalityHomogenityStat)
   })
 
@@ -681,26 +682,51 @@ CalculateRatio <- function(
 
 
 
+
 TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
   tidyData,
+  variableName,
   valuesColumnRegex = "ratio_vs_.*",
-  groupColName = qpcr$opts$plateDesign$groupColname
+  groupColName = qpcr$opts$plateDesign$groupColname,
+  outputDir = qpcr$opts$outputDir,
+  histogramsDir = "histograms"
 )
 {
-  groups <- unique(tidyData[[groupColName]])
+  library(ggplot2)
+  
+  dirName <- paste0(outputDir, '/', histogramsDir)
+  
+  dir.create(dirName)
   
   valuesColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valuesColumnRegex)
   
   valuesColname <- colnames(tidyData)[valuesColnameBool]
   
-  
+  groups <- unique(tidyData[[groupColName]])
   
   shapiro <- purrr::map_dfr(
     .x = groups, 
     .f = function(group){
       
+      histogramName <- paste0(dirName, '/', variableName, "_", group, "_hist.png")
+      dotplotName <- paste0(dirName, '/', variableName, "_", group, "_dot.png")
+      
       groupSubset <- tidyData[tidyData[[groupColName]] == group,]
-
+      
+      histogram_ <- ggplot2::ggplot(
+        data = groupSubset, 
+        mapping = ggplot2::aes(x = !!as.symbol(valuesColname))) +
+        ggplot2::geom_density()
+      ggplot2::ggsave(filename = histogramName, plot = histogram_, dpi = 250)
+      
+      dotplot_ <- ggplot2::ggplot(
+        data = groupSubset, 
+        mapping = ggplot2::aes(x = !!as.symbol(valuesColname))) +
+        ggplot2::geom_dotplot()
+      ggplot2::ggsave(filename = dotplotName, plot = dotplot_, dpi = 250)
+      
+      
+      
       shapiroForGroup <- broom::tidy(shapiro.test(groupSubset[[valuesColname]]))
       
       shapiroForGroup[["group"]] <- group
@@ -710,27 +736,12 @@ TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
   
   formula_ <- as.formula(paste0(valuesColname, "~", groupColName))
   
-  levene <- car::leveneTest(formula_, data = tidyData)# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
+  levene <- car::leveneTest(formula_, data = tidyData, center = "median")# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
   
   fligner <- broom::tidy(fligner.test(formula_, data = tidyData))# Fligner-Killeen’s test: a non-parametric test which is very robust against departures from normality.
   
   return(list("shapiro" = shapiro, "levene" = levene, "fligner" = fligner))
 }
-
-
-
-
-
-
-
-TidyAnovas <- function(
-  tidyData,
-)
-{
-  
-  
-}
-
 
 
 
@@ -745,14 +756,14 @@ TidyWilcoxonOrTTestForOneVariable <- function(
   significanceLevel = 0.05,
   groupColname = qpcr$opts$plateDesign$groupColname,
   geneCol = qpcr$opts$runs$geneCol,
-  ratioColnameRegex = "ratio_vs_.*" ### !!! redo the name to valueColnameRegex
+  valueColnameRegex = "ratio_vs_.*" ### !!! redo the name to valueColnameRegex
 )
 {
-  ratioColnameBool <- stringr::str_detect(colnames(ratioData), pattern = ratioColnameRegex)
+  valueColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valueColnameRegex)
   
-  ratioColname <- colnames(ratioData)[ratioColnameBool]
+  valueColname <- colnames(tidyData)[valueColnameBool]
   
-  formula_ <- as.formula(paste0(ratioColname, " ~ ", groupColname))
+  formula_ <- as.formula(paste0(valueColname, " ~ ", groupColname))
   
   
   
@@ -760,16 +771,16 @@ TidyWilcoxonOrTTestForOneVariable <- function(
     .x = comparisons, 
     .f = function(comparison){
       
-      compSubset <- ratioData[ratioData[[groupColname]] %in% comparison,]
+      compSubset <- tidyData[tidyData[[groupColname]] %in% comparison,]
       
-      areGroupsNormallyDistributed <- normalityHomogenityDataList$shapiro[normalityHomogenityDataList$shapiro[[groupColname]] %in% comparison,]$p.value
+      areGroupsNormallyDistributed <- tidyTestNormalityAndHomogenityOfVarianceOutput$shapiro[tidyTestNormalityAndHomogenityOfVarianceOutput$shapiro[[groupColname]] %in% comparison,]$p.value
       
       
-      if (normalityHomogenityDataList$levene[["Pr(>F)"]][[1]] > significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
+      if (tidyTestNormalityAndHomogenityOfVarianceOutput$levene[["Pr(>F)"]][[1]] > significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
       {
         stat_ <- broom::tidy( t.test(formula = formula_, data = compSubset, na.action = na.omit, var.equal = T) )
         
-      } else if (normalityHomogenityDataList$levene[["Pr(>F)"]][[1]] <= significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
+      } else if (tidyTestNormalityAndHomogenityOfVarianceOutput$levene[["Pr(>F)"]][[1]] <= significanceLevel && areGroupsNormallyDistributed[[1]]  > significanceLevel && areGroupsNormallyDistributed[[2]]  > significanceLevel)
       {
         stat_ <- broom::tidy( t.test(formula = formula_, data = compSubset, na.action = na.omit, var.equal = F) )
         
@@ -845,6 +856,69 @@ TidyDrawGroupBoxplotsForEachVariable <- function(
 
 
 
+TidyAnovas <- function(
+  tidyData,
+  groupColname = qpcr$opts$plateDesign$groupColname,
+  controlGroupForPostHoc = NA,
+  valueColnameRegex = "ratio_vs_.*", 
+  significanceLevel = 0.05,
+  multipleCompMethod = NA ### !!! implement
+)
+{
+  valueColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valueColnameRegex)
+  
+  valueColname <- colnames(tidyData)[valueColnameBool]
+  
+  formula_ <- as.formula(paste0(valueColname, " ~ ", groupColname))
+  
+  tidyData[[groupColname]] <- as.factor(tidyData[[groupColname]])
+  
+  
+  
+  aovOneWay <- list("anova" = broom::tidy(aov(formula_, data = tidyData)),
+                    "welchAnova" = broom::tidy(oneway.test(formula_, data = tidyData, var.equal = F))
+  )
+  ### !!! Brown-Forstyhe ANOVA?
+  
+  if (is.na(controlGroupForPostHoc) && aovOneWay$anova$p.value[[1]] < significanceLevel)
+  {
+    aovOneWay[["anova_TukeyHSD"]] <- broom::tidy(TukeyHSD(aov(formula_, data = tidyData), groupColname))
+    
+  } else if (!is.na(controlGroupForPostHoc) && aovOneWay$anova$p.value[[1]] < significanceLevel)
+  {
+    aovOneWay[["anova_dunnet"]] <- as.data.frame(DescTools::DunnettTest(formula_, data = tidyData, control = controlGroupForPostHoc)[[1]])
+    aovOneWay[["anova_dunnet"]]$comparison <- rownames(aovOneWay[["anova_dunnet"]])
+  }
+  
+  if (is.na(controlGroupForPostHoc) && aovOneWay$welchAnova$p.value[[1]] < significanceLevel)
+  {
+    aovOneWay[["welshAnova_GH"]] <- rstatix::games_howell_test(tidyData, formula_)
+    
+  } else if (!is.na(controlGroupForPostHoc) && aovOneWay$welchAnova$p.value[[1]] < significanceLevel)
+  {
+    ### !!! to implement 
+  }
+  
+  
+  
+  kw_ <- list("kruskalWallis" = broom::tidy(kruskal.test(formula_, data = tidyData)) )
+  
+  if (is.na(controlGroupForPostHoc) && kw_$kruskalWallis$p.value[[1]] < significanceLevel)
+  {
+    
+    kw_[["dunn"]] <- as.data.frame(DescTools::DunnTest(formula_, data = tidyData)[[1]])
+    kw_[["dunn"]]$comparison <- rownames(kw_[["dunn"]])
+    
+  } else if (!is.na(controlGroupForPostHoc) && kw_$kruskalWallis$p.value[[1]] < significanceLevel)
+  {
+    ### !!! to implement Mann-Whitney test (for KW) with multiple comparisons
+  }
+  
+  
+  return(list("anovaOneWay" = aovOneWay, "KruskalWallis" = kw_))
+}
+
+
 
 
 
@@ -857,7 +931,7 @@ TidyDrawCorrelationBetweenTwoVariables <- function(
   tidyData,
   samplesToCorrelateColumn = "gene",
   correlateGroupsFromThisColumn = "sample",
-  valuesUsedForCorrelationColumn = "ratio_vs_gapdh", ### !!! change into regex
+  valuesColumnRegex = "ratio_vs_.*", ### !!! change into regex
   outputDir = qpcr$opts$outputDir,
   correlationsDir = "correlations_"
 )
@@ -866,13 +940,17 @@ TidyDrawCorrelationBetweenTwoVariables <- function(
   
   dir.create(dirName)
   
+  valuesColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valuesColumnRegex)
+  
+  valuesColumn <- colnames(tidyData)[valuesColnameBool]
+  
   png_name <- paste0(dirName, '/', 'correlation_', samplesToCorrelateColumn, "_", correlateGroupsFromThisColumn, '.png')
   
-  matrixData <- tidyData[c(correlateGroupsFromThisColumn, samplesToCorrelateColumn, valuesUsedForCorrelationColumn)]
+  matrixData <- tidyData[c(correlateGroupsFromThisColumn, samplesToCorrelateColumn, valuesColumn)]
   
   matrixData <- tidyr::pivot_wider(
     data = matrixData, 
-    values_from = !!as.symbol(valuesUsedForCorrelationColumn),
+    values_from = !!as.symbol(valuesColumn),
     names_from = !!as.symbol(samplesToCorrelateColumn) )
   
   rownames(matrixData) <- matrixData[[correlateGroupsFromThisColumn]]
