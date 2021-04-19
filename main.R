@@ -281,6 +281,26 @@ qpcr$pairwiseStat <- purrr::map2(
 
 
 
+
+qpcr$anovas <- purrr::map(
+  .x = qpcr$ratio,
+  .f = function(gene){
+    TidyAnovas(tidyData = gene)
+  })
+
+
+
+
+
+wb <- openxlsx::createWorkbook()
+purrr::walk2(
+  .x = qpcr$anovas,
+  .y = names(qpcr$anovas),
+  .f = function(gene, geneName){
+    PrintTidyStatisticsToExcel(tidyStatisticSet = gene, variableName = geneName, openxlsxWBookToWriteInto = wb)
+  })
+openxlsx::saveWorkbook(wb, "test.xlsx", overwrite = TRUE)
+
 qpcr$ratiosBind <- rlist::list.rbind(qpcr$ratio)
 
 
@@ -873,49 +893,88 @@ TidyAnovas <- function(
   
   tidyData[[groupColname]] <- as.factor(tidyData[[groupColname]])
   
+
   
-  
-  aovOneWay <- list("anova" = broom::tidy(aov(formula_, data = tidyData)),
-                    "welchAnova" = broom::tidy(oneway.test(formula_, data = tidyData, var.equal = F))
+  return_ <- list("anova" = broom::tidy(aov(formula_, data = tidyData)),
+                  "welchAnova" = broom::tidy(oneway.test(formula_, data = tidyData, var.equal = F))
   )
   ### !!! Brown-Forstyhe ANOVA?
   
-  if (is.na(controlGroupForPostHoc) && aovOneWay$anova$p.value[[1]] < significanceLevel)
+  if (is.na(controlGroupForPostHoc) && return_$anova$p.value[[1]] < significanceLevel)
   {
-    aovOneWay[["anova_TukeyHSD"]] <- broom::tidy(TukeyHSD(aov(formula_, data = tidyData), groupColname))
+    return_[["anova_TukeyHSD"]] <- broom::tidy(TukeyHSD(aov(formula_, data = tidyData), groupColname))
     
-  } else if (!is.na(controlGroupForPostHoc) && aovOneWay$anova$p.value[[1]] < significanceLevel)
+  } else if (!is.na(controlGroupForPostHoc) && return_$anova$p.value[[1]] < significanceLevel)
   {
-    aovOneWay[["anova_dunnet"]] <- as.data.frame(DescTools::DunnettTest(formula_, data = tidyData, control = controlGroupForPostHoc)[[1]])
-    aovOneWay[["anova_dunnet"]]$comparison <- rownames(aovOneWay[["anova_dunnet"]])
+    return_[["anova_dunnet"]] <- as.data.frame(DescTools::DunnettTest(formula_, data = tidyData, control = controlGroupForPostHoc)[[1]])
+    return_[["anova_dunnet"]]$comparison <- rownames(return_[["anova_dunnet"]])
   }
   
-  if (is.na(controlGroupForPostHoc) && aovOneWay$welchAnova$p.value[[1]] < significanceLevel)
+  if (is.na(controlGroupForPostHoc) && return_$welchAnova$p.value[[1]] < significanceLevel)
   {
-    aovOneWay[["welshAnova_GH"]] <- rstatix::games_howell_test(tidyData, formula_)
+    return_[["welshAnova_GH"]] <- rstatix::games_howell_test(tidyData, formula_)
     
-  } else if (!is.na(controlGroupForPostHoc) && aovOneWay$welchAnova$p.value[[1]] < significanceLevel)
+  } else if (!is.na(controlGroupForPostHoc) && return_$welchAnova$p.value[[1]] < significanceLevel)
   {
     ### !!! to implement 
   }
   
   
   
-  kw_ <- list("kruskalWallis" = broom::tidy(kruskal.test(formula_, data = tidyData)) )
+  return_[["kruskalWallis"]] <- broom::tidy(kruskal.test(formula_, data = tidyData))
   
-  if (is.na(controlGroupForPostHoc) && kw_$kruskalWallis$p.value[[1]] < significanceLevel)
+  if (is.na(controlGroupForPostHoc) && return_$kruskalWallis$p.value[[1]] < significanceLevel)
   {
     
-    kw_[["dunn"]] <- as.data.frame(DescTools::DunnTest(formula_, data = tidyData)[[1]])
-    kw_[["dunn"]]$comparison <- rownames(kw_[["dunn"]])
+    return_[["kruskalWallis_dunn"]] <- as.data.frame(DescTools::DunnTest(formula_, data = tidyData)[[1]])
+    return_[["kruskalWallis_dunn"]]$comparison <- rownames(return_[["kruskalWallis_dunn"]])
     
-  } else if (!is.na(controlGroupForPostHoc) && kw_$kruskalWallis$p.value[[1]] < significanceLevel)
+  } else if (!is.na(controlGroupForPostHoc) && return_$kruskalWallis$p.value[[1]] < significanceLevel)
   {
     ### !!! to implement Mann-Whitney test (for KW) with multiple comparisons
   }
   
   
-  return(list("anovaOneWay" = aovOneWay, "KruskalWallis" = kw_))
+  return(return_)
+}
+
+
+
+
+
+
+
+
+PrintTidyStatisticsToExcel <- function(
+  tidyStatisticSet,
+  variableName,
+  openxlsxWBookToWriteInto
+)
+{
+  openxlsx::addWorksheet(openxlsxWBookToWriteInto, sheetName = variableName)
+  
+  currentRow <- 1
+  
+  for (statNb in seq_along(tidyStatisticSet)) {
+    
+    nbOfRowsPlusColnames <- length(tidyStatisticSet[[statNb]][[1]]) + 1
+    
+    openxlsx::writeData(
+      openxlsxWBookToWriteInto, 
+      sheet = variableName, 
+      x = names(tidyStatisticSet)[[statNb]], 
+      startRow = currentRow)
+    
+    openxlsx::writeDataTable(
+      openxlsxWBookToWriteInto,
+      sheet = variableName,
+      x = tidyStatisticSet[[statNb]],
+      colNames = TRUE,
+      startRow = currentRow + 1,
+      tableName = paste0(variableName, "__", names(tidyStatisticSet)[[statNb]]) )
+    
+    currentRow <- currentRow + nbOfRowsPlusColnames + 3
+  }
 }
 
 
