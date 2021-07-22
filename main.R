@@ -465,8 +465,11 @@ prepareInput <- function(
 
 
 
+
+
 prepareDataFromInput <- function(
   geneName,
+  plateDesign = qpcr$plateDesign,
   inputMerged = qpcr$inputMerged,
   sampleColumn = qpcr$opts$plateDesign$sampleColname,
   geneColumn = qpcr$opts$runs$geneCol,
@@ -475,6 +478,8 @@ prepareDataFromInput <- function(
   cqCol = qpcr$opts$runs$cqCol,
   RepCol = "Rep")
 {
+  library(Hmisc)
+  
   preAnalyzedData <- inputMerged[inputMerged[[geneColumn]] == geneName & !is.na(qpcr$inputMerged[[sampleColumn]]),]
   
   repLevels <- levels(as.factor(preAnalyzedData[[RepCol]]))
@@ -482,7 +487,21 @@ prepareDataFromInput <- function(
   preAnalyzedData <- tidyr::pivot_wider(
     data = preAnalyzedData, names_from = RepCol, values_from = cqCol)
   
+  preAnalyzedData <- preAnalyzedData[match(plateDesign[[sampleColumn]], preAnalyzedData[[sampleColumn]]),]
+  
+  if ( any(plateDesign[[sampleColumn]] != preAnalyzedData[[sampleColumn]]) ) {
+    stop("ladderNames != ladderData[[sampleColumn]]")
+  }
+  
   preAnalyzedData <- AddMeanSdFlagToDF(preAnalyzedData, repLevels)
+  
+  ladderData <- preAnalyzedData[preAnalyzedData[[sampleColumn]] %in% ladderNames,]
+  
+  ladderData <- ladderData[match(ladderNames, ladderData[[sampleColumn]]),]
+  if ( any(ladderNames != ladderData[[sampleColumn]]) ) {
+    stop("ladderNames != ladderData[[sampleColumn]]")
+  }
+  
   
   preAnalyzedDataList <- list(
     "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] %nin%  c(blankName, ladderNames),],
