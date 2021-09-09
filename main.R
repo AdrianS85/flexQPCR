@@ -216,7 +216,7 @@ qpcr$perGeneQa <- NULL
 qpcr$ladderData <- purrr::map(
   .x = qpcr$perGeneQaPassed, 
   .f = function(gene_){
-    calculateLadderStats(gene_$ladder$data$mean)
+    calculateLadderStats(gene_$ladder$data)
   })
 
 
@@ -495,6 +495,8 @@ prepareDataFromInput <- function(
   
   preAnalyzedData <- AddMeanSdFlagToDF(preAnalyzedData, repLevels)
   
+  preAnalyzedData <-preAnalyzedData[order(preAnalyzedData[[sampleColumn]]),]
+  
   ladderData <- preAnalyzedData[preAnalyzedData[[sampleColumn]] %in% ladderNames,]
   
   ladderData <- ladderData[match(ladderNames, ladderData[[sampleColumn]]),]
@@ -502,11 +504,10 @@ prepareDataFromInput <- function(
     stop("ladderNames != ladderData[[sampleColumn]]")
   }
   
-  
   preAnalyzedDataList <- list(
     "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] %nin%  c(blankName, ladderNames),],
     "ladder" = list(
-      "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] %in% ladderNames,]),
+      "data" = ladderData),
     "blanks" = list(
       "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] == blankName,]))
   
@@ -544,10 +545,14 @@ AddMeanSdFlagToDF <- function(
 
 
 calculateLadderStats <- function(
-  ladderMeans,
+  ladderDataMeans,
   lowestDilutionToUse = 1,
-  ladderConcentrations = qpcr$opts$runs$ladder)
+  ladderConcentrations = qpcr$opts$runs$ladder,
+  sampleColname = qpcr$opts$plateDesign$sampleColname)
 {
+  ladderDataMeans <- ladderDataMeans[match(names(ladderConcentrations), ladderDataMeans[[sampleColname]]),]
+  
+  ladderMeans <- ladderDataMeans[["mean"]]
   
   highestDilutionToUse <- length(ladderMeans[!is.na(ladderMeans)])
   
