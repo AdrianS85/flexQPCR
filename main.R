@@ -509,7 +509,7 @@ prepareDataFromInput <- function(
     "ladder" = list(
       "data" = ladderData),
     "blanks" = list(
-      "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] == blankName,]))
+      "data" = preAnalyzedData[preAnalyzedData[[sampleColumn]] %in% blankName,]))
   
   return(preAnalyzedDataList)
 }
