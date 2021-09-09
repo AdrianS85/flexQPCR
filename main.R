@@ -41,7 +41,7 @@ qpcr <- list(
       "complexGeneDesignFilePresent" = F,
       "geneCol" = "gene",
       "emptyName" = NA, ### this cannot be changed, as !is.na is used further, do use this value to change empty names to NA
-      "blankName" = "H2O", ### !!! There may be some issues if more than one blank is present
+      "blankName" = "H2O",
       "ladder" = list("x2" = 1250, "x10" = 250, "x50" = 50, "x250" = 10, "x1250" = 2),
       "refGenes" = c("gapdh", "hmbs", "tbp", "ywhaz"),
       "namesForReplicates" = list(1, 2, 3) ### !!! co jeśli nazwy replicatów zostały pdoane w plate file? Need to write some checking function
