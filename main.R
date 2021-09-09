@@ -180,6 +180,7 @@ names(qpcr$perGene) <- levels(as.factor(qpcr$inputMerged$gene))
 
 
 ### MANUAL STEP - REMOVE CORRUPTED VALUES, BAD LADDER CONCENTRATIONS AND RECALCULATE VALUES ###
+### are all samples within ladder? Are blanks reasonably far from last ladder?
 qpcr$perGeneQa <- qpcr$perGene
 
 # rows/columns
