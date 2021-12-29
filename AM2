@@ -1,0 +1,1223 @@
+source("https://raw.githubusercontent.com/AdrianS85/helper_R_functions/master/little_helpers.R")
+library(magrittr)
+
+
+### plateDesignFile needs 3 columns: well, group and sample names
+### complexGeneDesignFilePresent - chodzi o to, że na jednej płytce masz różne geny. wtedy musisz załączyć do każdego pliku z raw data plik z projektem genów na płytce. Jeśli F, to po prostu nazwa genu dla tej płytki. Jeśli T to plik.
+### skipRows - used when there is some shit rows before actual colnames. just set it to skip all shit rows, but not colnames
+### sampleRepsIn - tells if we chould look for replication information in plateDesign "plate" or in files descriptions "files"
+### namesForReplicates - lista nazw dla kolejnych replikatów
+### format must be either tsv or excelSheets. In excelSheets format each "file" is separate sheet
+### geneCol is not in the data, its produced based on other information
+
+save(qpcr, file = "qpcr.sav")
+qpcr$opts$comparisons$sex
+qpcr <- list(
+  "opts" = list(
+    "sampleRepsIn" = NA,
+    "comparisons" = list(
+      "group" = c("f_ama_btbr", "f_ama_c57", "f_yma_btbr", "f_yma_c57", "m_ama_c57", "m_yma_btbr", "m_yma_c57"),
+      "sex" = c("m", "g"),
+      "age" = c("yma", "ama"),
+      "strain" = c("c57", "btbr")), #sex-matched yma-C57 vs yma-btbr, as Well as ama vs yma in within the strain groups. 
+    "outputDir" = "qpcr_output",
+    "plateDesign" = list(
+      "file" = "qpcr_input.xlsx",
+      "wellColname" = NA, ### This needs to have the same values as position column in runs
+      "sampleColname" = "sample",
+      "groupColname" = list("group", "sex", "age", "strain"),
+      "RepsColName" = NA),
+    "runs" = list(
+      "format" = NA,
+      "excelFile" = NA,
+      "colTypes" = NA, ### "ccccncccccnncccccnncccn" for LC96, 
+      "wellCol" = NA,
+      "cqCol" = "Cq",
+      "skipRows" = 0, ### 0 for LC96
+      "complexGeneDesignFilePresent" = F,
+      "geneCol" = "gene",
+      "emptyName" = NA, ### this cannot be changed, as !is.na is used further, do use this value to change empty names to NA
+      "blankName" = "B_.*", ### !!! There may be some issues if more than one blank is present
+      "ladder" = list("x2" = 1250, "x10" = 250, "x50" = 50, "x250" = 10, "x1250" = 2),
+      "refGenes" = c("Gapdh", "Hmbs", "Tbp", "Pgk1"),
+      "namesForReplicates" = list(1, 2, 3) ### !!! co jeśli nazwy replicatów zostały pdoane w plate file? Need to write some checking function
+    )
+  ))
+
+
+
+qpcr$plateDesign <- purrr::map(
+  .x = list("h_plate" = "h_plate", "p_plate" = "p_plate", "h2_plate" = "h2_plate", "p2_plate" = "p2_plate"),
+  .f = function(sheet) {
+    openxlsx::read.xlsx(xlsxFile = qpcr$opts$plateDesign$file, sheet = sheet)
+})
+
+
+
+qpcr$inputMerged <- purrr::map2(
+  .x = list("h" = "h", "p" = "p", "h2" = "h2", "p2" = "p2"),
+  .y = qpcr$plateDesign,
+  .f = function(sheet, plate) {
+    df_ <- openxlsx::read.xlsx(xlsxFile = qpcr$opts$plateDesign$file, sheet = sheet)
+    
+    df_long <- tidyr::pivot_longer(data = df_, !c(sample, rep, temp), names_to = "gene", values_to = "Cq")
+    
+    merge(df_long, plate, by = "sample")
+  })
+
+
+
+qpcr$perGene <- purrr::map2(
+  .x = qpcr$inputMerged,
+  .y = qpcr$plateDesign,
+  .f = function(dataset, plate){
+    
+    dataset_ <- purrr::map(
+      .x = levels(as.factor(dataset$gene)), 
+      .f = function(gene_){
+        prepareDataFromInput(geneName = gene_, inputMerged = dataset, plateDesign = plate, RepCol = "rep")
+      })
+    names(dataset_) <- levels(as.factor(dataset$gene))
+    
+    return(dataset_)
+  })
+  
+
+
+qpcr$perGeneQa <- qpcr$perGene
+
+
+
+qpcr$perGeneQa$h$Gabra5$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$h$Gabrb1$valuesToNaCoordinates <- list(
+  "gene" = list( c(9,12) ),
+  "ladder" = list( c(5,10), c(5,11) ))
+
+qpcr$perGeneQa$h$Gabrb3$valuesToNaCoordinates <- list(
+  "gene" = list( c(10,11), c(20,11), c(23,11), c(28,11), c(30,11), c(32,11)),
+  "ladder" = list( c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$h$Glra1$valuesToNaCoordinates <- list(
+  "gene" = list( c(27,11) ))
+
+qpcr$perGeneQa$h$Myocd$valuesToNaCoordinates <- list(
+  "gene" = list( c(6,10) ),
+  "ladder" = list( c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$h$Pianp$valuesToNaCoordinates <- list(
+  "gene" = list( c(27,10) ),
+  "ladder" = list( c(4,10), c(4,11), c(4,12), c(5,10), c(5,11), c(5,12) ))
+
+
+
+qpcr$perGeneQa$p$Abhd1$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11) ))
+
+qpcr$perGeneQa$p$Cp$valuesToNaCoordinates <- list(
+  "gene" = list( c(11,12) ),
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$p$Dyrk4$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(4,10), c(4,11) )) ### Generally bad analysis
+
+qpcr$perGeneQa$p$Eomes$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$p$Esrrb$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,11) ))
+
+qpcr$perGeneQa$p$Hfe$valuesToNaCoordinates <- list(
+  "gene" = list( c(6,11), c(15,12) ))
+
+qpcr$perGeneQa$p$Htr6$valuesToNaCoordinates <- list(
+  "gene" = list( c(2,12), c(6,11), c(15,10), c(19,12), c(24,10), c(27,10)) ) ### Generally bad analysis
+
+qpcr$perGeneQa$p$Inmt$valuesToNaCoordinates <- list(
+  "gene" = list( c(4,11), c(5,11), c(15,12), c(20,11)) )
+
+qpcr$perGeneQa$p$Mmp9$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$p$Mmp9_2$valuesToNaCoordinates <- list(
+  "gene" = list( c(5,12), c(30,11)),
+  "ladder" = list( c(5,10)) )
+
+qpcr$perGeneQa$p$Pla2g2f$valuesToNaCoordinates <- list(
+  "gene" = list( c(21,11) ),
+  "ladder" = list( c(5,10), c(5,12) ))
+
+qpcr$perGeneQa$p$Pla2g4e$valuesToNaCoordinates <- list(
+  "gene" = list( c(18,11)) )
+
+qpcr$perGeneQa$p$Pla2g5$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,12) ))
+
+qpcr$perGeneQa$p$Tbp$valuesToNaCoordinates <- list(
+  "gene" = list( c(24,10) ),
+  "ladder" = list( c(5,12) ) )
+
+qpcr$perGeneQa$p$Tpbpa$valuesToNaCoordinates <- list(
+  "gene" = list( c(24,10)) )
+
+qpcr$perGeneQa$p$Tpmt$valuesToNaCoordinates <- list(
+  "gene" = list( c(8,12)) )
+
+
+
+qpcr$perGeneQa$h2$Abhd1$valuesToNaCoordinates <- list(
+  "gene" = list( c(17,11), c(18,11), c(19,11) ),
+  "ladder" = list( c(2,11), c(3,11), c(4,11), c(5,11) ))
+
+qpcr$perGeneQa$h2$Gabra5$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ))
+
+qpcr$perGeneQa$h2$Gabrb1$valuesToNaCoordinates <- list(
+  "gene" = list( c(16,11) ))
+
+qpcr$perGeneQa$h2$Gapdh$valuesToNaCoordinates <- list(
+  "gene" = list( c(1,12), c(3,12) ) )
+
+qpcr$perGeneQa$h2$Hmbs$valuesToNaCoordinates <- list(
+  "gene" = list( c(1,12) ) )
+
+qpcr$perGeneQa$h2$Myocd$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11) ))
+
+qpcr$perGeneQa$h2$Ndn$valuesToNaCoordinates <- list(
+  "gene" = list( c(9,12) ),
+  "ladder" = list( c(2,12) ))
+
+qpcr$perGeneQa$h2$Neurod4$valuesToNaCoordinates <- list(
+  "gene" = list( c(1,12) ) )
+
+qpcr$perGeneQa$h2$Pianp$valuesToNaCoordinates <- list(
+  "gene" = list( c(17,11), c(18,11), c(19,11) ),
+  "ladder" = list( c(4,10), c(4,11), c(4,12), c(5,10), c(5,11), c(5,12) ))
+
+
+
+
+qpcr$perGeneQa$p2$Dyrk4$valuesToNaCoordinates <- list(
+  "ladder" = list( c(4,12) ))
+
+qpcr$perGeneQa$p2$Hfe$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,12) ))
+
+qpcr$perGeneQa$p2$Eomes$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ) )
+
+qpcr$perGeneQa$p2$Esrrb$valuesToNaCoordinates <- list(
+  "gene" = list( c(7,11) ) )
+
+qpcr$perGeneQa$p2$Htr6$valuesToNaCoordinates <- list(
+  "ladder" = list( c(4,11), c(4,12), c(5,11) )) ###
+
+qpcr$perGeneQa$p2$Mmp7$valuesToNaCoordinates <- list(
+  "gene" = list( c(5,10) ) )
+
+qpcr$perGeneQa$p2$Mmp9$valuesToNaCoordinates <- list(
+  "ladder" = list( c(5,10), c(5,11), c(5,12) ) )
+
+qpcr$perGeneQa$p2$Tpbpa$valuesToNaCoordinates <- list(
+  "gene" = list( c(15,10) ) )
+
+
+
+qpcr$perGeneQaPassed <- purrr::map(
+  .x = qpcr$perGeneQa, 
+  .f = function(dataset){
+    
+    purrr::map(
+      .x = dataset,
+      .f = function(gene){
+        RepairCorruptedValues(gene)
+      })
+  })
+
+
+
+qpcr$ladderData <- purrr::map(
+  .x = qpcr$perGeneQaPassed, 
+  .f = function(dataset){
+    
+    purrr::map(
+      .x = dataset, 
+      .f = function(gene_){
+        calculateLadderStats(gene_$ladder$data)
+      })
+  })
+
+
+
+### !!! Potential problems
+plot(qpcr$perGeneQaPassed$p$Eomes$ladder$data$mean)
+plot(qpcr$perGeneQaPassed$p$Htr6$ladder$data$mean) ### !
+
+plot(qpcr$perGeneQaPassed$h2$Gabra5$ladder$data$mean) ### !!!
+plot(qpcr$perGeneQaPassed$h2$Gabrb1$ladder$data$mean)
+
+plot(qpcr$perGeneQaPassed$p2$Ctsq$ladder$data$mean)
+plot(qpcr$perGeneQaPassed$p2$Dyrk4$ladder$data$mean)
+plot(qpcr$perGeneQaPassed$p2$Mmp9$ladder$data$mean)
+### !!! Potential problems
+
+
+
+CheckIfAllReferenceGenesHaveData(perGeneDatasets = qpcr$perGeneQaPassed$p2)
+#
+
+
+
+qpcr$refGenesToUse <- purrr::map(
+  .x = qpcr$perGeneQaPassed, 
+  .f = function(dataset){
+
+        GetReferenceValues(
+          "geNorm", 
+          perGene = dataset,
+          perGeneNames = names(dataset),
+          singleGroupColnameToAnalyzeBy = qpcr$opts$plateDesign$groupColname[[1]])
+  })
+  
+### - h,p - Gapdh, Gapdh, h2 - Pgk1, p2 - Tbp
+
+
+
+qpcr$deltaCt <- purrr::map2(
+  .x = qpcr$perGeneQaPassed,
+  .y = qpcr$ladderData,
+  .f = function(dataset, dataset_ladder){
+    
+    
+    purrr::map2(
+      .x = dataset,
+      .y = dataset_ladder,
+      .f = function(gene, ladder){
+        
+        CalculateDeltaCt(gene$data, ladder$efficiency)
+      })
+  })
+
+
+
+qpcr$ratio <- rlist::list.clean(
+  
+  purrr::map2(
+    .x = qpcr$deltaCt,
+    .y = c("Gapdh", "Gapdh", "Pgk1", "Tbp"),
+    .f = function(dataset, ref_gene){
+      
+      
+      purrr::map(
+        .x = dataset,
+        .f = function(gene){
+          CalculateRatio(gene, dataset[[ref_gene]], ref_gene)
+        }) 
+    })
+)
+
+qpcr$ratio_1_plus_2$head <- purrr::map(
+  .x = names(qpcr$ratio$h),
+  .f = function(genename){
+    
+    if(genename %in% qpcr$opt$runs$refGenes){
+      return(NA)
+    } else {
+      temp1 <- qpcr$ratio$h[[genename]]
+      temp2 <- qpcr$ratio$h2[[genename]]
+      
+      rbind( dplyr::rename(.data = temp1, ratio = ratio_vs_Gapdh), dplyr::rename(.data = temp2, ratio =  ratio_vs_Pgk1))
+    }
+  })
+names(qpcr$ratio_1_plus_2$head) <- stringr::str_c(names(qpcr$ratio$h), "_h")
+
+
+
+qpcr$ratio_1_plus_2$placenta <- purrr::map(
+  .x = names(qpcr$ratio$p),
+  .f = function(genename){
+    
+    if(genename %in% qpcr$opt$runs$refGenes){
+      return(NA)
+    } else {
+      temp1 <- qpcr$ratio$p[[genename]]
+      temp2 <- qpcr$ratio$p2[[genename]]
+      
+      if (!is.null(temp2)) {
+        rbind( dplyr::rename(.data = temp1, ratio = ratio_vs_Gapdh), dplyr::rename(.data = temp2, ratio =  ratio_vs_Tbp))
+      } else (
+        return(temp1)
+      )
+    }
+  })
+names(qpcr$ratio_1_plus_2$placenta) <- stringr::str_c(names(qpcr$ratio$p), "_p")
+qpcr$ratio_1_plus_2$placenta$Mmp7_p <- dplyr::rename(.data = qpcr$ratio$p2$Mmp7, ratio = ratio_vs_Tbp)
+
+qpcr$all_ratios <- rlist::list.merge(qpcr$ratio_1_plus_2$head, qpcr$ratio_1_plus_2$placenta)
+qpcr$all_ratios <- qpcr$all_ratios[!is.na(qpcr$all_ratios)]
+
+
+
+# Tutaj można porównać nadgrupy, ale trzeba pamiętać, że podgrupy to prawdziwe grupy, a wiec w nadgrupach takich jak płeć nie możemy zakładać normalności
+qpcr$normalityHomogenity <- purrr::map2(
+  .x = qpcr$ratio,
+  .y = names(qpcr$ratio),
+  .f = function(gene, geneName){
+    TidyTestNormalityAndHomogenityOfVarianceForOneVariable(gene, geneName, groupColName = )
+  })
+
+
+
+qpcr$anova <- NULL
+
+
+qpcr$wb$anova_simple <- openxlsx::createWorkbook()
+qpcr$anova_simple <- purrr::map2(
+  .x = qpcr$all_ratios,
+  .y = names(qpcr$all_ratios),
+  .f = function(gene, gene_name){
+    
+    df_ <- purrr::map2(
+      .x = names(qpcr$opts$comparisons)[2:4],
+      .y = qpcr$opts$comparisons[2:4],
+      .f = function(factor_, levels_){
+        
+        TidyAnovas(
+          tidyData = gene, 
+          geneName = gene_name,
+          openxlsxWBookToWriteInto = qpcr$wb$anova_simple,
+          groupColname = factor_, 
+          controlGroupForPostHoc = levels_[[1]], 
+          valueColnameRegex = "ratio")
+      })
+    names(df_) <- names(qpcr$opts$comparisons)[2:4]
+    
+    return(df_)
+  })
+openxlsx::saveWorkbook(qpcr$wb$anova_simple, "anova_simple.xlsx", overwrite = TRUE)
+
+
+
+qpcr$wb$anova_two_way <- openxlsx::createWorkbook()
+qpcr$anova_two_way <- purrr::map2(
+  .x = qpcr$all_ratios,
+  .y = names(qpcr$all_ratios),
+  .f = function(gene, gene_name){
+        
+        TidyAnovas(
+          tidyData = gene, 
+          geneName = gene_name,
+          openxlsxWBookToWriteInto = qpcr$wb$anova_two_way,
+          groupColname = names(qpcr$opts$comparisons)[2:4], 
+          controlGroupForPostHoc = levels_[[1]], 
+          valueColnameRegex = "ratio")
+  })
+openxlsx::saveWorkbook(qpcr$wb$anova_two_way, "anova_two_way", overwrite = TRUE)
+
+
+
+
+test2 <- openxlsx::createWorkbook()
+test <- TidyAnovas(
+  tidyData = qpcr$all_ratios$Abhd1_h, 
+  geneName = "Abhd1_p",
+  openxlsxWBookToWriteInto = test2,
+  groupColname = "sex", 
+  controlGroupForPostHoc = NA, 
+  valueColnameRegex = "ratio",
+  shallIDraw = F)
+openxlsx::saveWorkbook(qpcr$wb, "test.xlsx", overwrite = TRUE)
+
+paste("group", collapse = " + ")
+paste(qpcr$opts$plateDesign$groupColname, collapse = " + ")
+stringr::str_c(as.character(qpcr$opts$plateDesign$groupColname), sep = " + ")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#################
+### FUNCTIONS ###
+
+#only if format == excelSheet
+prepareInput <- function(
+  rawFileName,
+  genesDesign,
+  repsNameFiles = NA,
+  format = qpcr$opts$runs$format,
+  sheetName = NA, 
+  sampleRepsIn = qpcr$opts$sampleRepsIn,
+  repsNamePlate = qpcr$opts$plateDesign$RepsColName,
+  colTypes = qpcr$opts$runs$colTypes, 
+  skipRows = qpcr$opts$runs$skipRows, 
+  wellCol = qpcr$opts$runs$wellCol,
+  cqCol = qpcr$opts$runs$cqCol,
+  geneCol = qpcr$opts$runs$geneCol,
+  plateDesign = qpcr$plateDesign,
+  wellColname = qpcr$opts$plateDesign$wellColname,
+  sampleColname = qpcr$opts$plateDesign$sampleColname,
+  groupColname = qpcr$opts$plateDesign$groupColname)
+{
+  library(Hmisc)
+  options(scipen=999)
+  
+  if(format == "tsv") {
+    
+    colNames_ <- readr::read_tsv(rawFileName, col_types = colTypes, col_names = T, skip = skipRows, n_max = 2)
+    
+    rawFile <- readr::read_tsv(rawFileName, col_types = colTypes, col_names = F, skip = skipRows + 1)
+    
+    colnames(rawFile) <- colnames(colNames_)
+    
+  } else if (format == "excelSheets") {
+    
+    rawFile <- openxlsx::read.xlsx(xlsxFile = rawFileName, sheet = sheetName, colNames = T)
+    
+    rawFile[[cqCol]] <- as.numeric(rawFile[[cqCol]])
+    
+  } else if (format != "tsv" && format != "excelSheets") {
+    
+    stop("Format needs to be either tsv or excelSheets")
+  }
+  
+  rawFile2 <-subset(rawFile, select = c(wellCol, cqCol))
+  
+  
+  
+  ### !!! Jeśli byśmy chcieli to rozwijać, to warto sprawdzić, czy rawFile nie zawiera kolumny o nazwie geneCol, bo jeśli zawiera to po prostu ją trzeba użyć jako geneDesign
+  if (geneCol %in% colnames(rawFile))
+  {
+    rawFile2[[geneCol]] <- rawFile[[geneCol]]
+  } else rawFile2[[geneCol]] <- genesDesign
+  
+  
+  
+  if (sampleRepsIn == "files")
+  {
+    if (!is.na(repsNameFiles))
+    {
+      rawFile2[["Rep"]] <- repsNameFiles
+    } else stop("Reps names for files not provided")
+    
+  } else if (sampleRepsIn == "plate")
+  {
+    if (!is.na(repsNamePlate))
+    {
+      rawFile2[["Rep"]] <- repsNamePlate
+    } else { stop("Reps names for plates not provided") }
+    
+  } else
+  {
+    stop("qpcr$opts$sampleRepsIn need to be either  plate or flies")
+  }
+  
+  
+  
+  rawFile2[[sampleColname]] <- recode_values_based_on_key(
+    to_recode_chrvec = rawFile2[[wellCol]],
+    replace_this_chrvec = plateDesign[[wellColname]],
+    with_this_chrvec = plateDesign[[sampleColname]])
+  
+  rawFile2[[groupColname]] <- recode_values_based_on_key(
+    to_recode_chrvec = rawFile2[[wellCol]],
+    replace_this_chrvec = plateDesign[[wellColname]],
+    with_this_chrvec = plateDesign[[groupColname]])
+  
+  return(rawFile2)
+}
+
+
+
+
+
+
+
+
+prepareDataFromInput <- function(
+  geneName,
+  plateDesign = qpcr$plateDesign,
+  inputMerged = qpcr$inputMerged,
+  sampleColumn = qpcr$opts$plateDesign$sampleColname,
+  geneColumn = qpcr$opts$runs$geneCol,
+  blankName = qpcr$opts$runs$blankName,
+  ladderNames = names(qpcr$opts$runs$ladder),
+  cqCol = qpcr$opts$runs$cqCol,
+  RepCol = "rep")
+{
+  library(Hmisc)
+  
+  preAnalyzedData <- inputMerged[inputMerged[[geneColumn]] == geneName & !is.na(inputMerged[[sampleColumn]]),]
+  
+  repLevels <- levels(as.factor(preAnalyzedData[[RepCol]]))
+  
+  preAnalyzedData <- tidyr::pivot_wider(
+    data = preAnalyzedData, names_from = RepCol, values_from = cqCol)
+  
+  preAnalyzedData <- preAnalyzedData[match(plateDesign[[sampleColumn]], preAnalyzedData[[sampleColumn]]),]
+  
+  if ( any(plateDesign[[sampleColumn]] != preAnalyzedData[[sampleColumn]]) ) {
+    stop("ladderNames != ladderData[[sampleColumn]]")
+  }
+  
+  preAnalyzedData <- AddMeanSdFlagToDF(preAnalyzedData, repLevels)
+  
+  preAnalyzedData <-preAnalyzedData[order(preAnalyzedData[[sampleColumn]]),]
+  
+  ladderData <- preAnalyzedData[preAnalyzedData[[sampleColumn]] %in% ladderNames,]
+  
+  ladderData <- ladderData[match(ladderNames, ladderData[[sampleColumn]]),]
+  if ( any(ladderNames != ladderData[[sampleColumn]]) ) {
+    stop("ladderNames != ladderData[[sampleColumn]]")
+  }
+  
+  preAnalyzedDataList <- list(
+    "data" = preAnalyzedData[(preAnalyzedData[[sampleColumn]] %nin%  ladderNames) & !stringr::str_detect(string = preAnalyzedData[[sampleColumn]], pattern = blankName),],
+    "ladder" = list(
+      "data" = ladderData),
+    "blanks" = list(
+      "data" = preAnalyzedData[stringr::str_detect(string = preAnalyzedData[[sampleColumn]], pattern = blankName),]))
+  
+  return(preAnalyzedDataList)
+}
+
+
+
+
+
+
+
+
+
+RepairCorruptedValues <- function(
+  geneQaPassed_,
+  whereInGQPAreGeneData = "data",
+  whereInGQPAreLadderData = c("ladder", "data"),
+  whereInGQPAreNACoordinates = "valuesToNaCoordinates",
+  whereInNACoordAreGeneCoords = "gene",
+  whereInNACoordAreLadderCoords = "ladder",
+  repLevels = as.character(qpcr$opts$runs$namesForReplicates),
+  rowCoord = 1,
+  colCoord = 2
+)
+{
+  
+  if (!is.null(
+    geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]])
+  ) {
+    
+    for (value in seq_along(
+      geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]])) {
+      
+      geneQaPassed_[[ whereInGQPAreGeneData ]][[ geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]][[value]][[rowCoord]], geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreGeneCoords]][[value]][[colCoord]] ]] <- NA
+      
+      geneQaPassed_[[ whereInGQPAreGeneData ]] <- AddMeanSdFlagToDF(geneQaPassed_[[ whereInGQPAreGeneData ]], repLevels)
+    }
+  }
+  
+  
+  
+  if (!is.null(geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]])
+  ) {
+    
+    for (value in seq_along(
+      geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]])) {
+      
+      geneQaPassed_[[ whereInGQPAreLadderData[[1]] ]][[ whereInGQPAreLadderData[[2]] ]][[geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]][[value]][[rowCoord]], geneQaPassed_[[whereInGQPAreNACoordinates]][[whereInNACoordAreLadderCoords]][[value]][[colCoord]] ]] <- NA
+      
+      geneQaPassed_[[ whereInGQPAreLadderData[[1]] ]][[ whereInGQPAreLadderData[[2]] ]] <- AddMeanSdFlagToDF(geneQaPassed_[[ whereInGQPAreLadderData[[1]] ]][[ whereInGQPAreLadderData[[2]] ]], repLevels)
+    }
+  }
+  
+  return(geneQaPassed_)
+}
+
+
+
+
+
+
+
+
+CheckIfAllReferenceGenesHaveData <- function(
+  perGeneDatasets = qpcr$perGene,
+  refGenesNames = qpcr$opts$runs$refGenes
+)
+{
+  for (gene in refGenesNames)
+  {
+    if (gene %in% names(perGeneDatasets)) {
+      print(paste0(gene, " is present in datasets"))
+    } else stop(paste0(gene, " IS ABSENT IN DATASETS. BEWARE OF CAPITALIZED LETTERS."))
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+### !!! "NormFinder" sometimes gies apeshit, i think due to group size = 1. Dont care, gonna use "geNorm"
+GetReferenceValues <- function(
+  method,
+  perGene,
+  perGeneNames,
+  singleGroupColnameToAnalyzeBy,
+  refGenesToRemove = NA,
+  refGenes = qpcr$opts$runs$refGenes,
+  namesForReplicates = qpcr$opts$runs$namesForReplicates,
+  sampleColname = qpcr$opts$plateDesign$sampleColname
+)
+{
+  if ( !is.na(refGenesToRemove) ) {
+    library(Hmisc)
+    refGenes <- refGenes[refGenes %nin% refGenesToRemove]
+  }
+  
+  
+  groupNamesTemp <- perGene[[1]][["data"]]
+  
+  groupNamesTemp <- groupNamesTemp[!is.na(groupNamesTemp[[singleGroupColnameToAnalyzeBy]]),]
+  
+  groupNames <- groupNamesTemp[order(groupNamesTemp[[sampleColname]]),]
+  
+  groupNames <- groupNames[singleGroupColnameToAnalyzeBy]
+
+
+  
+  refDf <- purrr::pmap_dfc(
+    .l = list(perGene, perGeneNames), 
+    .f = function(gene, geneName)
+    {
+      
+      if (tolower(geneName) %in% tolower(refGenes))
+      {
+        gene_data <- gene[["data"]]
+        gene_data <- gene_data[!is.na(gene_data[[singleGroupColnameToAnalyzeBy]]),]
+        gene_data <- gene_data[order(gene_data[[sampleColname]]),]
+        gene_data <- gene_data["mean"]
+        colnames(gene_data) <- c(geneName)
+        return(gene_data)
+      }
+    })
+  
+  normRefDf <- NormqPCR::selectHKs(as.matrix(refDf), Symbols = colnames(refDf), group = as.factor(groupNames[[singleGroupColnameToAnalyzeBy]]), method = method, minNrHKs = 2, log = TRUE, trace = TRUE, na.rm = TRUE)
+  
+  advOutout <- capture.output(NormqPCR::selectHKs(as.matrix(refDf), Symbols = colnames(refDf), group = groupNames[[singleGroupColnameToAnalyzeBy]], method = method, minNrHKs = 2, log = TRUE, trace = TRUE, na.rm = TRUE), type = c("output", "message"))
+
+  return(list("output" = normRefDf, "advOutout" = advOutout))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CalculateDeltaCt <- function(
+  geneData,
+  eneEfficiency,
+  meanFromAllSamplesOrControlGroup = "all", ### "all" or "control"
+  controlGroupName = NA, ### only for meanFromAllSamplesOrControlGroup = "control"
+  groupName = qpcr$opts$plateDesign$groupColname,
+  cqCol = qpcr$opts$runs$cqCol,
+  deltaCtColName = "deltaCt"
+)
+{
+  if (meanFromAllSamplesOrControlGroup == "all")
+  {
+    meanOfMeans <- mean(geneData[["mean"]], na.rm = TRUE)
+    
+  } else if (meanFromAllSamplesOrControlGroup == "control")
+  {
+    meanOfMeans <- mean( 
+      subset(
+        x = geneData,
+        subset = geneData[[groupName]] == controlGroupName,
+        select = groupName ),
+      na.rm = TRUE)
+    
+    assertthat::not_empty(meanOfMeans)
+    
+  } else { stop("meanFromAllSamplesOrControlGroup need to be either all or control") }
+  
+  geneData[[deltaCtColName]] <- NA
+  
+  for (sampleNb in seq_along(geneData[["mean"]]))
+  {
+    geneData[[deltaCtColName]][[sampleNb]] <- eneEfficiency ^ (meanOfMeans - geneData[["mean"]][[sampleNb]])
+  }
+  
+  return(geneData)
+}
+
+
+
+
+
+
+
+
+
+
+
+CalculateRatio <- function(
+  geneExperimentalData,
+  geneReferenceData,
+  geneReferenceName,
+  geneCol = qpcr$opts$runs$geneCol,
+  CqCol = qpcr$opts$runs$cqCol,
+  deltaCtColName = "deltaCt",
+  ratioColName = "ratio_vs_"
+)
+{
+  if (geneExperimentalData[[geneCol]][[1]] != geneReferenceName)
+  {
+    ddCtName <- paste0(ratioColName, geneReferenceName)
+    
+    geneExperimentalData[[ddCtName]] <- NA
+    
+    geneExperimentalData[[ddCtName]] <- geneExperimentalData[[deltaCtColName]]/geneReferenceData[[deltaCtColName]]
+    
+    return(geneExperimentalData)
+    
+  } else return(NULL)
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+TidyTestNormalityAndHomogenityOfVarianceForOneVariable <- function(
+  tidyData,
+  variableName,
+  valuesColumnRegex = "ratio_vs_.*",
+  groupColName = qpcr$opts$plateDesign$groupColname,
+  outputDir = qpcr$opts$outputDir,
+  histogramsDir = "histograms"
+)
+{
+  library(ggplot2)
+  
+  dirName <- paste0(outputDir, '/', histogramsDir)
+  
+  dir.create(dirName)
+  
+  tidyData <- tidyData[!is.na(tidyData[[groupColName]]),]
+  
+  valuesColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valuesColumnRegex)
+  
+  valuesColname <- colnames(tidyData)[valuesColnameBool]
+  
+  groups <- unique(tidyData[[groupColName]])
+  
+  shapiro <- purrr::map_dfr(
+    .x = groups, 
+    .f = function(group){
+      
+      histogramName <- paste0(dirName, '/', variableName, "_", group, "_hist.png")
+      dotplotName <- paste0(dirName, '/', variableName, "_", group, "_dot.png")
+      
+      groupSubset <- tidyData[tidyData[[groupColName]] == group,]
+      
+      histogram_ <- ggplot2::ggplot(
+        data = groupSubset, 
+        mapping = ggplot2::aes(x = !!as.symbol(valuesColname))) +
+        ggplot2::geom_density()
+      ggplot2::ggsave(filename = histogramName, plot = histogram_, dpi = 250)
+      
+      dotplot_ <- ggplot2::ggplot(
+        data = groupSubset, 
+        mapping = ggplot2::aes(x = !!as.symbol(valuesColname))) +
+        ggplot2::geom_dotplot()
+      ggplot2::ggsave(filename = dotplotName, plot = dotplot_, dpi = 250)
+      
+      
+      
+      shapiroForGroup <- tryCatch(
+        {broom::tidy(shapiro.test(groupSubset[[valuesColname]]))
+        }, error = function(cond) {NA})
+      
+      shapiroForGroup[["group"]] <- group
+      
+      return(shapiroForGroup)
+    })
+  
+  formula_ <- as.formula(paste0(valuesColname, "~", groupColName))
+  
+  levene <- car::leveneTest(formula_, data = tidyData, center = "median")# Levene’s test: A robust alternative to the Bartlett’s test that is less sensitive to departures from normality.
+  
+  fligner <- broom::tidy(fligner.test(formula_, data = tidyData))# Fligner-Killeen’s test: a non-parametric test which is very robust against departures from normality.
+  
+  return(list("shapiro" = shapiro, "levene" = levene, "fligner" = fligner))
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TidyAnovas <- function(
+  tidyData,
+  geneName,
+  openxlsxWBookToWriteInto,
+  shallIDraw = T,
+  groupColname = qpcr$opts$plateDesign$groupColname,
+  controlGroupForPostHoc = NA,
+  valueColnameRegex = "ratio_vs_.*", 
+  significanceLevel = 0.05,
+  outputDir = qpcr$opts$outputDir,
+  multipleCompMethod = NA ### !!! implement
+)
+{
+  valueColnameBool <- stringr::str_detect(colnames(tidyData), pattern = valueColnameRegex)
+  
+  valueColname <- colnames(tidyData)[valueColnameBool]
+  
+  formula_ <- as.formula(paste0(valueColname, " ~ ", paste(groupColname, collapse = " + ") ))
+  
+  formula_interaction <- as.formula(paste0(valueColname, " ~ ", paste(groupColname, collapse = " * ") ))
+  
+  for (factor__ in groupColname) {
+    tidyData[[factor__]] <- as.factor(tidyData[[factor__]])
+  }
+  
+  dirName <- paste0(outputDir, '/anova')
+  
+  dir.create(dirName)
+  
+  if (shallIDraw == T) {
+    for (group_ in groupColname) {
+      ggplot2::ggsave(
+        filename = paste0(dirName, '/', geneName, "_", group_, "_aov.png"),
+        plot = onewaytests::gplot(
+          formula = as.formula(paste0(valueColname, " ~ ", group_)),
+          data = tidyData),
+        device = "png",
+        width = 300,
+        height = 210,
+        units = "mm")
+    }
+  }
+  
+  
+  return_ <- list()
+  
+  return_$anova <- TidyAnova(formula__ = formula_, tidyData_ = tidyData, controlGroupForPostHoc_ = controlGroupForPostHoc, groupColname_ = groupColname, significanceLevel_ = significanceLevel, formula_interaction_ = formula_interaction)
+  
+  return_$brownForstyheAnova <- TidyBrownForstyheAnova(formula__ = formula_, tidyData_ = tidyData)
+  
+  return_$welchAnova <- TidyWelchAnova(formula__ = formula_, tidyData_ = tidyData, controlGroupForPostHoc_ = controlGroupForPostHoc, groupColname_ = groupColname, significanceLevel_ = significanceLevel)
+  
+  return_$kruskalWallis <- TidyKruskalWallis(formula__ = formula_, tidyData_ = tidyData, controlGroupForPostHoc_ = controlGroupForPostHoc, groupColname_ = groupColname, significanceLevel_ = significanceLevel)
+  
+  WriteTidyAnovasIntoExcel(return__ = return_, openxlsxWBookToWriteInto_ = openxlsxWBookToWriteInto, geneName_ = paste0(geneName, "_", groupColname))
+  
+  
+  return(return_)
+}
+
+
+
+
+
+
+
+
+WriteTidyAnovasIntoExcel <- function(return__, openxlsxWBookToWriteInto_, geneName_)
+{
+  openxlsx::addWorksheet(openxlsxWBookToWriteInto_, sheetName = geneName_)
+  
+  currentRow <- 1
+  
+  openxlsx::writeData(
+    openxlsxWBookToWriteInto_,
+    sheet = geneName_,
+    x = geneName_,
+    startRow = currentRow)
+  
+  currentRow <- currentRow + 1
+  
+  for (dsNb in seq_along(return__)) {
+    
+    for (tabNb in seq_along(return__[[dsNb]])) {
+      nbOfRowsPlusColnames <- length(return__[[dsNb]][[tabNb]][[1]]) + 1
+      
+      openxlsx::writeData(
+        openxlsxWBookToWriteInto_,
+        sheet = geneName_,
+        x = names(return__[[dsNb]])[[tabNb]],
+        startRow = currentRow)
+      
+      currentRow <- currentRow + 1
+      
+      if (!is.na(return__[[dsNb]][[tabNb]]))
+      {
+        openxlsx::writeDataTable(
+          openxlsxWBookToWriteInto_,
+          sheet = geneName_,
+          x = return__[[dsNb]][[tabNb]],
+          colNames = TRUE,
+          startRow = currentRow,
+          tableName = paste0(geneName_, "_", names(return__[[dsNb]])[[tabNb]]) )
+      } else
+      {
+        openxlsx::writeData(
+          openxlsxWBookToWriteInto_,
+          sheet = geneName_,
+          x = paste0(names(return__[[dsNb]])[[tabNb]], " analysis returned NA"),
+          startRow = currentRow)
+      }
+      
+      
+      currentRow <- currentRow + nbOfRowsPlusColnames + 1
+    }
+    currentRow <- currentRow + 4
+  }
+}
+
+
+
+
+
+
+TidyAnova <- function(formula__ = formula_, tidyData_ = tidyData, controlGroupForPostHoc_ = controlGroupForPostHoc, groupColname_ = groupColname, significanceLevel_ = significanceLevel, formula_interaction_ = formula_interaction)
+{
+  return__ <- list()
+  
+  return__$anova <- tryCatch({
+    broom::tidy(aov(formula__, data = tidyData_)) },
+    error = function(cond){NA})
+  
+  if (length(groupColname_) != 1)  {
+    return__$anova_interaction <- tryCatch({
+      broom::tidy(aov(formula_interaction_, data = tidyData_)) },
+      error = function(cond){NA})
+  }
+  
+  
+  if ( !is.na(return__$anova)) {
+    
+    if (is.na(controlGroupForPostHoc_) && return__$anova$p.value[[1]] < significanceLevel_)
+    {
+      return__[["anova_TukeyHSD"]] <- tryCatch({
+        broom::tidy(TukeyHSD(aov(formula__, data = tidyData_), groupColname_)) },
+        error = function(cond){NA})
+      
+    } else if (!is.na(controlGroupForPostHoc_) && return__$anova$p.value[[1]] < significanceLevel_)
+    {
+      return__[["anova_dunnet"]] <- tryCatch({
+        anova_dunnet <- as.data.frame(DescTools::DunnettTest(formula__, data = tidyData_, control = controlGroupForPostHoc_)[[1]])
+        anova_dunnet$comparison <- rownames(anova_dunnet)
+        anova_dunnet },
+        error = function(cond){NA})
+    }
+  }
+  
+  return(return__)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+TidyBrownForstyheAnova <- function(formula__ = formula_, tidyData_ = tidyData)
+{
+  return__ <- list()
+  
+  return__$brownForstyheAnova <- tryCatch({
+    onewaytests::bf.test(formula = formula__, data = tidyData_)
+  }, error = function(cond){NA})
+  
+  return__$brownForstyheAnova <- as.data.frame(return__$brownForstyheAnova[1:5])
+  
+  
+  return(return__)
+}
+
+
+
+
+
+
+
+TidyWelchAnova <- function(formula__ = formula_, tidyData_ = tidyData, controlGroupForPostHoc_ = controlGroupForPostHoc, groupColname_ = groupColname, significanceLevel_ = significanceLevel)
+{
+  return__ <- list()
+  
+  return__$welchAnova <- tryCatch({
+    if (length(groupColname_) == 1) {
+      broom::tidy(oneway.test(formula__, data = tidyData_, var.equal = F))
+    } else { NA  }
+    
+  },
+  error = function(cond){NA})
+  
+  
+  if ( !is.na(return__$welchAnova))
+  {
+    if (is.na(controlGroupForPostHoc_) && return__$welchAnova$p.value[[1]] < significanceLevel_)
+    {
+      return__[["welshAnova_GH"]] <- tryCatch({
+        rstatix::games_howell_test(tidyData_, formula__) },
+        error = function(cond){NA})
+      
+    } else if (!is.na(controlGroupForPostHoc_) && return__$welchAnova$p.value[[1]] < significanceLevel_)
+    {
+      ### !!! to implement 
+    }
+  }
+  
+  
+  return(return__)
+}
+
+
+
+
+
+
+
+TidyKruskalWallis <- function(formula__ = formula_, tidyData_ = tidyData, controlGroupForPostHoc_ = controlGroupForPostHoc, groupColname_ = groupColname, significanceLevel_ = significanceLevel)
+{
+  return__ <- list()
+  
+  return__$kruskalWallis <- tryCatch({
+    broom::tidy(kruskal.test(formula__, data = tidyData_)) },
+    error = function(cond){NA})
+  
+  
+  if ( !is.na(return__$kruskalWallis))
+  {
+    if (is.na(controlGroupForPostHoc_) && return__$kruskalWallis$p.value[[1]] < significanceLevel_)
+    {
+      return__[["kruskalWallis_dunn"]] <- tryCatch({
+        kruskalWallis_dunn <- as.data.frame(DescTools::DunnTest(formula__, data = tidyData_)[[1]])
+        kruskalWallis_dunn$comparison <- rownames(kruskalWallis_dunn)
+        kruskalWallis_dunn },
+        error = function(cond){NA})
+      
+    } else if (!is.na(controlGroupForPostHoc_) && return__$kruskalWallis$p.value[[1]] < significanceLevel_)
+    {
+      ### !!! to implement Mann-Whitney test (for KW) with multiple comparisons
+    }
+  }
+  
+  
+  return(return__)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PrintTidyStatisticsToExcel <- function(
+  tidyStatisticSet,
+  variableName,
+  openxlsxWBookToWriteInto
+)
+{
+  openxlsx::addWorksheet(openxlsxWBookToWriteInto, sheetName = variableName)
+  
+  currentRow <- 1
+  
+  for (statNb in seq_along(tidyStatisticSet)) {
+    
+    nbOfRowsPlusColnames <- length(tidyStatisticSet[[statNb]][[1]]) + 1
+    
+    openxlsx::writeData(
+      openxlsxWBookToWriteInto, 
+      sheet = variableName, 
+      x = names(tidyStatisticSet)[[statNb]], 
+      startRow = currentRow)
+    
+    openxlsx::writeDataTable(
+      openxlsxWBookToWriteInto,
+      sheet = variableName,
+      x = tidyStatisticSet[[statNb]],
+      colNames = TRUE,
+      startRow = currentRow + 1,
+      tableName = paste0(variableName, "__", names(tidyStatisticSet)[[statNb]]) )
+    
+    currentRow <- currentRow + nbOfRowsPlusColnames + 3
+  }
+}
+
+
+
+
+
+
+### FUNCTIONS ###
+#################
