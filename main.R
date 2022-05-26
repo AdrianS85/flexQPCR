@@ -356,6 +356,76 @@ purrr::walk2(
 
 
 
+# qpcr <- qpcr_removed_bad_measurements
+# 
+# 
+# qpcr$for_methods$one <- purrr::map2_df(
+#   .x = qpcr[["perGeneQaPassed"]],
+#   .y = names(qpcr[["perGeneQaPassed"]]),
+#   .f = function(analysis, analysis_name){
+#     
+#     
+#     purrr::map2_df(
+#       .x = analysis,
+#       .y = names(analysis),
+#       .f = function(gene, gene_name){
+#         
+#         data.frame(
+#           "ladder_dilutions" = paste0(gene$ladder$data$sample[!is.na(gene$ladder$data$mean)], collapse = ", "),
+#           "mean_Cq_of_the_highest_dilution_of_dilution_curve" = max(gene$ladder$data$mean),
+#           "mean_Cq_of_NTC" = mean(gene$blanks$data$mean),
+#           "analysis_name" = paste0(gene_name, "_", analysis_name))
+#       })
+#   })
+# 
+# qpcr$for_methods$ladder <- purrr::map2_df(
+#   .x = qpcr$ladderData,
+#   .y = names(qpcr$ladderData),
+#   .f = function(analysis, analysis_name){
+#     
+#     
+#     purrr::map2_df(
+#       .x = analysis,
+#       .y = names(analysis),
+#       .f = function(gene, gene_name){
+#         
+#         gene$analysis_name <- paste0(gene_name, "_", analysis_name)
+#         
+#         return(gene)
+#       })
+#   })
+# 
+# qpcr$for_methods$qpcr_qa <- merge(x = qpcr$for_methods$one, y = qpcr$for_methods$ladder, by = "analysis_name")
+# 
+# openxlsx::write.xlsx(x = qpcr$for_methods$qpcr_qa, file = "qpcr_qa.xlsx")
+# 
+# qpcr$for_methods$refgenes <- purrr::map2_dfc(
+#   .x = qpcr$refGenesToUse,
+#   .y = names(qpcr$refGenesToUse),
+#   .f = function(analysis, analysis_name){
+#     
+#     analysis_ <- data.frame(qpcr[["refGenesToUse"]][["h"]][["advOutout"]])
+#     
+#     colnames(analysis_) <- analysis_name
+#     
+#     return(analysis_)
+#   })
+# 
+# openxlsx::write.xlsx(x = qpcr$for_methods$refgenes, file = "refgenes.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
