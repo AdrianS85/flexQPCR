@@ -539,17 +539,22 @@ prepareInput <- function(
 
 
 prepareDataFromInput <- function(
-  geneName,
-  plateDesign = qpcr$plateDesign,
-  inputMerged = qpcr$inputMerged,
-  sampleColumn = qpcr$opts$plateDesign$sampleColname,
-  geneColumn = qpcr$opts$runs$geneCol,
-  blankName = qpcr$opts$runs$blankName,
-  ladderNames = names(qpcr$opts$runs$ladder),
-  cqCol = qpcr$opts$runs$cqCol,
-  RepCol = "Rep")
+    geneName,
+    repColName = NA,
+    plateDesign = qpcr$plateDesign,
+    inputMerged = qpcr$inputMerged,
+    sampleColumn = qpcr$opts$plateDesign$sampleColname,
+    geneColumn = qpcr$opts$runs$geneCol,
+    blankName = qpcr$opts$runs$blankName,
+    ladderNames = names(qpcr$opts$runs$ladder),
+    cqCol = qpcr$opts$runs$cqCol,
+    RepCol = "Rep")
 {
   library(Hmisc)
+  
+  if ( !is.na(repColName)  ) {
+    inputMerged <- inputMerged[order(inputMerged[[repColName]]),]
+  }
   
   preAnalyzedData <- inputMerged[inputMerged[[geneColumn]] == geneName & !is.na(inputMerged[[sampleColumn]]),]
   
