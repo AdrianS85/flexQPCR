@@ -481,7 +481,7 @@ prepareDataFromInput <- function(
 {
   library(Hmisc)
   
-  preAnalyzedData <- inputMerged[inputMerged[[geneColumn]] == geneName & !is.na(qpcr$inputMerged[[sampleColumn]]),]
+  preAnalyzedData <- inputMerged[inputMerged[[geneColumn]] == geneName & !is.na(inputMerged[[sampleColumn]]),]
   
   repLevels <- levels(as.factor(preAnalyzedData[[RepCol]]))
   
